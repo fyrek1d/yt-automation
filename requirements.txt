@@ -8,6 +8,7 @@ pyttsx3>=2.90
 edge-tts>=6.1.0
 kokoro-onnx>=0.4.7
 soundfile>=0.12.1
+elevenlabs>=2.61.0
 
 # Video Editing
 moviepy>=1.0.3
