@@ -24,18 +24,9 @@
     "min_words": 60,
     "max_words": 140,
     "posts_to_fetch": 50,
-    "target_seconds": [20, 57],
-    "explicit_words": [
-      "fuck", "fucking", "fucked", "fucks", "fucker", "fuckers",
-      "shit", "shits", "shitty", "bullshit",
-      "bitch", "bitches", "bitchy",
-      "cunt", "cunts", "pussy", "pussies",
-      "dick", "dicks", "dickhead", "cock", "cocks",
-      "asshole", "assholes", "asshat", "bastard", "bastards",
-      "whore", "whores", "slut", "sluts",
-      "motherfucker", "motherfucking", "motherfuckers",
-      "faggot", "faggots", "nigger", "niggers",
-      "retard", "retards", "retarded"
+    "target_seconds": [
+      20,
+      57
     ],
     "blocked_keywords": [
       "minecraft",
@@ -63,7 +54,8 @@
       "among us",
       "esports",
       "steam"
-    ]
+    ],
+    "explicit_words_file": "config/explicit_words.json"
   },
   "tts": {
     "engine": "elevenlabs",
@@ -77,7 +69,10 @@
     "slow": false
   },
   "video": {
-    "resolution": [1080, 1920],
+    "resolution": [
+      1080,
+      1920
+    ],
     "fps": 30
   },
   "paths": {
@@ -111,7 +106,7 @@
   },
   "metadata": {
     "title_format": "{title}",
-    "description_template": "A Reddit story narrated over Minecraft parkour. \ud83d\udda5\ufe0f\n\nOriginal post: {url}\n\n#shorts #redditstories #minecraft #parkour",
+    "description_template": "A Reddit story narrated over Minecraft parkour. 🖥️\n\nOriginal post: {url}\n\n#shorts #redditstories #minecraft #parkour",
     "tags": [
       "reddit stories",
       "minecraft parkour",

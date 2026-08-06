@@ -19,6 +19,7 @@ config/tiktok_tokens.json
 config/instagram_credentials.json
 config/instagram_tokens.json
 config/dashboard_secret.txt
+config/explicit_words.json
 
 # Large media (exceeds GitHub's per-file limit; add your own)
 assets/

@@ -52,6 +52,20 @@ else
   echo "    config/config.json already exists (leaving as-is)"
 fi
 
+echo "==> Censor word list"
+if [ ! -f config/explicit_words.json ]; then
+  echo "    Creating config/explicit_words.json (default list)"
+  .venv/bin/python - <<'PY'
+import base64, pathlib
+blob = "WyJmdWNrIiwgImZ1Y2tpbmciLCAiZnVja2VkIiwgImZ1Y2tzIiwgImZ1Y2tlciIsICJmdWNrZXJzIiwgInNoaXQiLCAic2hpdHMiLCAic2hpdHR5IiwgImJ1bGxzaGl0IiwgImJpdGNoIiwgImJpdGNoZXMiLCAiYml0Y2h5IiwgImN1bnQiLCAiY3VudHMiLCAicHVzc3kiLCAicHVzc2llcyIsICJkaWNrIiwgImRpY2tzIiwgImRpY2toZWFkIiwgImNvY2siLCAiY29ja3MiLCAiYXNzaG9sZSIsICJhc3Nob2xlcyIsICJhc3NoYXQiLCAiYmFzdGFyZCIsICJiYXN0YXJkcyIsICJ3aG9yZSIsICJ3aG9yZXMiLCAic2x1dCIsICJzbHV0cyIsICJtb3RoZXJmdWNrZXIiLCAibW90aGVyZnVja2luZyIsICJtb3RoZXJmdWNrZXJzIiwgImZhZ2dvdCIsICJmYWdnb3RzIiwgIm5pZ2dlciIsICJuaWdnZXJzIiwgInJldGFyZCIsICJyZXRhcmRzIiwgInJldGFyZGVkIl0="
+pathlib.Path("config/explicit_words.json").write_text(
+    base64.b64decode(blob).decode())
+print("    Wrote config/explicit_words.json")
+PY
+else
+  echo "    config/explicit_words.json already exists (leaving as-is)"
+fi
+
 echo "==> Gameplay footage"
 if ls assets/gameplay/*.mp4 >/dev/null 2>&1; then
   echo "    Found $(ls assets/gameplay/*.mp4 | wc -l) clip(s)"

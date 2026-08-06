@@ -109,6 +109,16 @@ def main():
     )
 
     tts_cfg = cfg["tts"]
+    explicit_words = cfg["content"].get("explicit_words") or []
+    ew_file = cfg["content"].get("explicit_words_file")
+    if ew_file:
+        ew_path = Path(resolve(base_dir, ew_file))
+        if ew_path.exists():
+            try:
+                explicit_words += json.loads(ew_path.read_text())
+            except json.JSONDecodeError as e:
+                log.warning(f"Ignoring {ew_path}: {e}")
+    explicit_words = list(dict.fromkeys(explicit_words))
     tts = TTS(
         lang=tts_cfg.get("lang", "en"),
         slow=tts_cfg.get("slow", False),
@@ -123,7 +133,7 @@ def main():
         model_path=paths.get("kokoro_model"),
         voices_path=paths.get("kokoro_voices"),
         elevenlabs_key_path=paths.get("elevenlabs_key"),
-        explicit_words=cfg["content"].get("explicit_words"),
+        explicit_words=explicit_words,
     )
 
     # Narration must land in the Shorts window; otherwise skip the story and

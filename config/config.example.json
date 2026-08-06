@@ -25,18 +25,7 @@
     "max_words": 140,
     "posts_to_fetch": 50,
     "target_seconds": [20, 57],
-    "explicit_words": [
-      "fuck", "fucking", "fucked", "fucks", "fucker", "fuckers",
-      "shit", "shits", "shitty", "bullshit",
-      "bitch", "bitches", "bitchy",
-      "cunt", "cunts", "pussy", "pussies",
-      "dick", "dicks", "dickhead", "cock", "cocks",
-      "asshole", "assholes", "asshat", "bastard", "bastards",
-      "whore", "whores", "slut", "sluts",
-      "motherfucker", "motherfucking", "motherfuckers",
-      "faggot", "faggots", "nigger", "niggers",
-      "retard", "retards", "retarded"
-    ],
+    "explicit_words_file": "config/explicit_words.json",
     "blocked_keywords": [
       "minecraft",
       "parkour",

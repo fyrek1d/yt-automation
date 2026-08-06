@@ -106,7 +106,7 @@ yt-automation/
 │   ├── config.json            # Channel settings, subreddits, TTS, tags
 │   ├── config.example.json    # Template copied by setup.sh
 │   ├── reddit.ini.template    # Optional Reddit API credentials template
-│   └── (secrets — gitignored: client_secret.json, token.json, keys)
+│   └── (secrets — gitignored: client_secret.json, token.json, keys, explicit_words.json)
 ├── logs/                      # Gitignored: posted.json + run logs
 ├── output/                    # Gitignored: rendered videos/audio
 ├── src/
@@ -136,7 +136,7 @@ to any media you feed the pipeline.
 ## Notes
 
 - Reddit content is user-generated; comply with Reddit's User Agreement and YouTube's reuse policies, and honor removal requests.
-- Explicit words are auto-censored (audio beep + masked captions/titles) — configurable in `config/config.json` under `content.explicit_words`.
+- Explicit words are auto-censored (audio beep + masked captions/titles). The list lives in `config/explicit_words.json` (gitignored — `setup.sh` creates it from an encoded copy so profanity/slurs never appear in the repo). Extend it any time; it's read at each run.
 - The YouTube OAuth scope is limited to `youtube.upload`, so custom thumbnails and video deletion require a broader scope / channel verification.
 
 ## Tags
