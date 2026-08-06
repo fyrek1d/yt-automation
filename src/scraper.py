@@ -17,6 +17,7 @@ import json
 import os
 import random
 import re
+import configparser
 import subprocess
 import time
 from typing import Optional
@@ -103,7 +104,17 @@ class StoryScraper:
             return None
         if reddit_ini and os.path.exists(reddit_ini):
             try:
-                return praw.Reddit(reddit_ini)
+                cfg = configparser.ConfigParser()
+                cfg.read(reddit_ini)
+                section = cfg[cfg.default_section] if cfg.default_section in cfg else cfg[list(cfg.sections())[0]]
+                cid = section.get("client_id", "")
+                sec = section.get("client_secret", "")
+                if cid and sec:
+                    return praw.Reddit(
+                        client_id=cid,
+                        client_secret=sec,
+                        user_agent=section.get("user_agent", "story-automator/1.0"),
+                    )
             except Exception:
                 return None
         cid = os.environ.get("REDDIT_CLIENT_ID")
