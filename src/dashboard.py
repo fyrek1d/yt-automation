@@ -45,6 +45,7 @@ STATE_PATH = BASE / "logs" / "dashboard_state.json"
 SECRET_PATH = BASE / "config" / "dashboard_secret.txt"
 
 app = Flask(__name__, static_folder=None)
+app.json.sort_keys = False
 
 
 # ---- helpers -------------------------------------------------------------
