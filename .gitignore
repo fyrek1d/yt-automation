@@ -9,6 +9,7 @@ logs/
 *TEMP_MPY_wvf_snd.mp4
 
 # Secrets / credentials (never commit these)
+config/config.json
 config/token.json
 config/client_secret.json
 config/client_secret_*.json
