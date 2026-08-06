@@ -24,7 +24,7 @@ A fully automated pipeline that creates faceless short-form videos: fetches Redd
 pip install -r requirements.txt
 ```
 
-### 1. Assets (not committed — too large for GitHub)
+### 1. Assets
 
 - **Gameplay:** drop your own Minecraft parkour clips into `assets/gameplay/` (any resolution/format; the editor center-crops and loops them).
 - **Kokoro TTS model** (optional fallback): download `kokoro-v1.0.onnx` and `voices-v1.0.bin` from the Kokoro-82M HuggingFace repo and place them in `assets/kokoro/`. Int8 and fp32 variants both work.
