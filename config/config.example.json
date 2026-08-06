@@ -26,6 +26,7 @@
     "posts_to_fetch": 50,
     "target_seconds": [20, 57],
     "explicit_words_file": "config/explicit_words.json",
+    "explicit_words": [],
     "blocked_keywords": [
       "minecraft",
       "parkour",

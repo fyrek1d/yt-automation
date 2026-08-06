@@ -8,13 +8,15 @@ cd "$(dirname "$0")"
 PY="${PYTHON:-python3}"
 NO_KOKORO=0
 SAMPLE_CLIP=0
+REFRESH_WORDS=0
 
 for arg in "$@"; do
   case "$arg" in
-    --no-kokoro)   NO_KOKORO=1 ;;
-    --sample-clip) SAMPLE_CLIP=1 ;;
-    --help|-h)     echo "Usage: ./setup.sh [--no-kokoro] [--sample-clip]"; exit 0 ;;
-    *)             echo "Unknown option: $arg"; exit 1 ;;
+    --no-kokoro)     NO_KOKORO=1 ;;
+    --sample-clip)   SAMPLE_CLIP=1 ;;
+    --refresh-words) REFRESH_WORDS=1 ;;
+    --help|-h)       echo "Usage: ./setup.sh [--no-kokoro] [--sample-clip] [--refresh-words]"; exit 0 ;;
+    *)               echo "Unknown option: $arg"; exit 1 ;;
   esac
 done
 
@@ -53,17 +55,15 @@ else
 fi
 
 echo "==> Censor word list"
-if [ ! -f config/explicit_words.json ]; then
-  echo "    Creating config/explicit_words.json (default list)"
-  .venv/bin/python - <<'PY'
-import base64, pathlib
-blob = "WyJmdWNrIiwgImZ1Y2tpbmciLCAiZnVja2VkIiwgImZ1Y2tzIiwgImZ1Y2tlciIsICJmdWNrZXJzIiwgInNoaXQiLCAic2hpdHMiLCAic2hpdHR5IiwgImJ1bGxzaGl0IiwgImJpdGNoIiwgImJpdGNoZXMiLCAiYml0Y2h5IiwgImN1bnQiLCAiY3VudHMiLCAicHVzc3kiLCAicHVzc2llcyIsICJkaWNrIiwgImRpY2tzIiwgImRpY2toZWFkIiwgImNvY2siLCAiY29ja3MiLCAiYXNzaG9sZSIsICJhc3Nob2xlcyIsICJhc3NoYXQiLCAiYmFzdGFyZCIsICJiYXN0YXJkcyIsICJ3aG9yZSIsICJ3aG9yZXMiLCAic2x1dCIsICJzbHV0cyIsICJtb3RoZXJmdWNrZXIiLCAibW90aGVyZnVja2luZyIsICJtb3RoZXJmdWNrZXJzIiwgImZhZ2dvdCIsICJmYWdnb3RzIiwgIm5pZ2dlciIsICJuaWdnZXJzIiwgInJldGFyZCIsICJyZXRhcmRzIiwgInJldGFyZGVkIl0="
-pathlib.Path("config/explicit_words.json").write_text(
-    base64.b64decode(blob).decode())
-print("    Wrote config/explicit_words.json")
-PY
+if [ "$REFRESH_WORDS" = "1" ] || [ ! -f config/explicit_words.json ]; then
+  echo "    Downloading profanity list (LDNOOBW, MIT) -> config/explicit_words.json"
+  if .venv/bin/python src/update_wordlist.py; then
+    echo "    Word list ready."
+  else
+    echo "    WARN: download failed - continue anyway (only inline content.explicit_words will be censored)"
+  fi
 else
-  echo "    config/explicit_words.json already exists (leaving as-is)"
+  echo "    config/explicit_words.json already exists (re-run with --refresh-words to update)"
 fi
 
 echo "==> Gameplay footage"

@@ -300,7 +300,7 @@ class TTS:
                 + "|".join(re.escape(w) for w in words)
                 + r")(?![a-zA-Z])"
             )
-            self._regex = re.compile(pattern)
+            self._regex = re.compile(pattern, re.IGNORECASE)
         return self._regex
 
     def _censor_spoken(self, text: str) -> str:

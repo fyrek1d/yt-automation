@@ -7,8 +7,9 @@ A fully automated pipeline that creates faceless short-form videos: fetches Redd
 ```bash
 git clone https://github.com/fyrek1d/yt-automation.git
 cd yt-automation
-./setup.sh                # venv + deps + Kokoro TTS models (~350 MB) + config
+./setup.sh                # venv + deps + Kokoro TTS models (~350 MB) + profanity list + config
 ./setup.sh --sample-clip  # optional: also generate a placeholder gameplay clip
+./setup.sh --refresh-words # optional: re-download the online profanity list
 ```
 
 Then follow the YouTube credentials step below (required to actually upload) and:
@@ -119,6 +120,7 @@ yt-automation/
 │   ├── crosspost.py           # TikTok + Instagram clients
 │   ├── auth_tiktok.py         # One-time TikTok OAuth
 │   ├── auth_instagram.py      # One-time Instagram OAuth
+│   ├── update_wordlist.py     # Downloads the online profanity list
 │   ├── dashboard.py           # Web dashboard (Flask)
 │   └── dashboard.html         # Web dashboard UI
 ├── requirements.txt
@@ -136,7 +138,7 @@ to any media you feed the pipeline.
 ## Notes
 
 - Reddit content is user-generated; comply with Reddit's User Agreement and YouTube's reuse policies, and honor removal requests.
-- Explicit words are auto-censored (audio beep + masked captions/titles). The list lives in `config/explicit_words.json` (gitignored — `setup.sh` creates it from an encoded copy so profanity/slurs never appear in the repo). Extend it any time; it's read at each run.
+- Explicit words are auto-censored (audio beep + masked captions/titles). The base list is downloaded from the [LDNOOBW](https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words) English list (MIT) by `setup.sh` into gitignored `config/explicit_words.json` — the repo never contains the terms. Add your own words to `content.explicit_words` in `config/config.json` (merged at each run). Refresh the base list anytime with `./setup.sh --refresh-words` or `.venv/bin/python src/update_wordlist.py`.
 - The YouTube OAuth scope is limited to `youtube.upload`, so custom thumbnails and video deletion require a broader scope / channel verification.
 
 ## Tags
