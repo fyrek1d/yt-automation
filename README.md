@@ -138,3 +138,6 @@ to any media you feed the pipeline.
 - Reddit content is user-generated; comply with Reddit's User Agreement and YouTube's reuse policies, and honor removal requests.
 - Explicit words are auto-censored (audio beep + masked captions/titles) — configurable in `config/config.json` under `content.explicit_words`.
 - The YouTube OAuth scope is limited to `youtube.upload`, so custom thumbnails and video deletion require a broader scope / channel verification.
+
+## Tags
+free, no API key required, kokoro TTS, offline TTS, YouTube Shorts automation, reddit-stories, faceless-youtube, minecraft-parkour, ai-video-generation, tiktok-automation
