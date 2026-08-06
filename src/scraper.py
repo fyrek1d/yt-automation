@@ -17,6 +17,7 @@ import json
 import os
 import random
 import re
+import subprocess
 import time
 from typing import Optional
 
@@ -153,13 +154,46 @@ class StoryScraper:
             "word_count": word_count,
         }
 
+    # ---- shared HTTP ----------------------------------------------------
+    def _http_get(self, url: str, timeout: int = 30) -> str:
+        """Fetch a URL, preferring curl (HTTP/1.1) over Python requests.
+
+        Reddit's bot detection fingerprints Python's TLS stack (JA3) and 429s
+        it even from residential IPs, while curl's TLS client-hello passes.
+        Retries with backoff on HTTP errors (429/5xx). Falls back to Python
+        requests only when curl itself isn't installed."""
+        last_err = None
+        curl_missing = False
+        for attempt in range(3):
+            try:
+                res = subprocess.run(
+                    ["curl", "--http1.1", "-sSf", "--compressed",
+                     "-m", str(timeout), "-A", BROWSER_UA, url],
+                    capture_output=True, text=True, timeout=timeout + 15,
+                )
+                if res.returncode == 0:
+                    return res.stdout
+                last_err = RuntimeError(
+                    f"curl exit {res.returncode}: {res.stderr[:200].strip()}"
+                )
+                time.sleep(3 if "429" in res.stderr else 1)
+            except FileNotFoundError:
+                curl_missing = True
+                break  # curl not installed -> use requests below
+            except subprocess.SubprocessError as e:
+                last_err = e
+                time.sleep(1)
+        if curl_missing and requests is not None:
+            resp = requests.get(
+                url, headers={"User-Agent": BROWSER_UA}, timeout=timeout
+            )
+            resp.raise_for_status()
+            return resp.text
+        raise RuntimeError(f"HTTP fetch failed for {url}: {last_err}")
+
     # ---- 1. Reddit RSS -----------------------------------------------------
     def _fetch_rss(self, url: str) -> list:
-        if requests is None:
-            return []
-        resp = requests.get(url, headers={"User-Agent": BROWSER_UA}, timeout=20)
-        resp.raise_for_status()
-        raw = resp.text
+        raw = self._http_get(url)
 
         stories = []
         for entry in re.findall(r"<entry>(.*?)</entry>", raw, re.S):
@@ -181,13 +215,15 @@ class StoryScraper:
                 r"/r/([^/]+)/", f"/r/{link}"
             )
             sub = m_sub.group(1) if m_sub else ""
+            if not sub:
+                continue
             story = self._build_story(sub, post_id, title, body, permalink=link)
             if story:
                 stories.append(story)
         return stories
 
     def _try_reddit(self, limit: int) -> list:
-        """Try one combined RSS request, then per-sub fallback."""
+        """Try one combined RSS request; per-sub only if Reddit was reachable."""
         combined = "+".join(self.subreddits)
         url = (
             f"https://www.reddit.com/r/{combined}/top.rss"
@@ -197,10 +233,14 @@ class StoryScraper:
             stories = self._fetch_rss(url)
             if stories:
                 return stories
+            # Reddit responded fine but nothing fit the word window; per-sub
+            # (smaller limit) can surface different posts. Only do this when
+            # Reddit was reachable - a 429 would have raised above.
+            print("Combined feed empty; trying per-subreddit feeds...")
         except Exception as e:
-            print(f"Combined RSS failed ({e}); trying per-subreddit...")
+            print(f"Combined RSS failed ({e}); skipping per-sub to respect rate limits.")
+            return []
 
-        # Per-sub fallback with polite pacing; skip subs that rate-limit.
         stories = []
         for sub in self.subreddits:
             try:
@@ -217,15 +257,11 @@ class StoryScraper:
 
     # ---- 2. PullPush archive -----------------------------------------------
     def _fetch_pullpush(self, sub: str, size: int) -> list:
-        if requests is None:
-            return []
         url = (
             "https://api.pullpush.io/reddit/search/submission/"
             f"?subreddit={sub}&sort_type=created_utc&sort=desc&size={size}"
         )
-        resp = requests.get(url, headers={"User-Agent": BROWSER_UA}, timeout=30)
-        resp.raise_for_status()
-        data = resp.json().get("data", [])
+        data = json.loads(self._http_get(url)).get("data", [])
 
         stories = []
         for p in data:
@@ -279,7 +315,10 @@ class StoryScraper:
                 try:
                     stories.extend(self._fetch_pullpush(sub, per_sub))
                 except Exception as e:
-                    print(f"  r/{sub} PullPush failed: {e}")
+                    print(f"  r/{sub} PullPush failed: {e}; giving up")
+                    break
+                if stories:
+                    break
                 time.sleep(1)
 
         # Deduplicate
