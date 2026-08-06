@@ -1,0 +1,8 @@
+[DEFAULT]
+# Create a free Reddit app: https://www.reddit.com/prefs/apps
+# choose "script" type, then paste the values below.
+client_id = YOUR_CLIENT_ID
+client_secret = YOUR_CLIENT_SECRET
+user_agent = story-parkour-automator/1.0 (by /u/YOUR_REDDIT_USERNAME)
+username = YOUR_REDDIT_USERNAME
+password = YOUR_REDDIT_PASSWORD

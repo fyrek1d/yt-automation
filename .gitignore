@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Rendered artifacts & logs
+output/
+logs/
+*TEMP_MPY_wvf_snd.mp4
+
+# Secrets / credentials (never commit these)
+config/token.json
+config/client_secret.json
+config/client_secret_*.json
+config/elevenlabs_key.txt
+config/reddit.ini
+config/tiktok_credentials.json
+config/tiktok_tokens.json
+config/instagram_credentials.json
+config/instagram_tokens.json
+
+# Large media (exceeds GitHub's per-file limit; add your own)
+assets/
