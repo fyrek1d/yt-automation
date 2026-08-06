@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipeline Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #171a23; --panel2: #1e2230; --border: #2a2f3d;
+    --text: #e6e9f0; --muted: #8b93a7; --accent: #4f8cff; --green: #3ecf8e;
+    --red: #ff5f56; --yellow: #ffd600;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  a { color: var(--accent); }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px;
+           background: var(--panel); border-bottom: 1px solid var(--border);
+           flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; }
+  .spacer { flex: 1; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+           border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px; }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--red); border-color: var(--red); }
+  nav { display: flex; gap: 4px; padding: 10px 20px 0; }
+  nav button { border: none; border-bottom: 2px solid transparent; border-radius: 0;
+               background: none; padding: 8px 14px; color: var(--muted); }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+  main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+  .card { background: var(--panel); border: 1px solid var(--border);
+          border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 12px; }
+  .stat { background: var(--panel2); border-radius: 10px; padding: 12px 14px; }
+  .stat .label { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+  .stat .value { font-size: 16px; font-weight: 600; margin-top: 4px; word-break: break-all; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px;
+          font-weight: 600; }
+  .pill.idle { background: #232838; color: var(--muted); }
+  .pill.run { background: rgba(62, 207, 142, .15); color: var(--green); }
+  .pill.upload { background: rgba(79, 140, 255, .15); color: var(--accent); }
+  .pill.dry { background: rgba(255, 214, 0, .15); color: var(--yellow); }
+  pre, textarea { background: var(--panel2); border: 1px solid var(--border);
+                  border-radius: 10px; padding: 12px; color: var(--text);
+                  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  textarea { width: 100%; min-height: 420px; resize: vertical; }
+  #runlog, #logview { height: 320px; overflow: auto; white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+  .muted { color: var(--muted); }
+  .msg { padding: 8px 12px; border-radius: 8px; margin-top: 10px; display: none; }
+  .msg.ok { display: block; background: rgba(62,207,142,.12); color: var(--green); }
+  .msg.err { display: block; background: rgba(255,95,86,.12); color: var(--red); }
+  #login { position: fixed; inset: 0; background: var(--bg); display: flex;
+           align-items: center; justify-content: center; z-index: 10; }
+  #login .card { width: 360px; }
+  #login input { width: 100%; padding: 10px; margin: 10px 0; background: var(--panel2);
+                 border: 1px solid var(--border); border-radius: 8px; color: var(--text); }
+  .videos { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .video { background: var(--panel2); border-radius: 10px; padding: 10px; }
+  .video .name { font-weight: 600; margin-bottom: 4px; word-break: break-all; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="card">
+    <h2>Dashboard locked</h2>
+    <p class="muted">Enter the token shown when the dashboard started (it's also in
+      <code>config/dashboard_secret.txt</code> on the server).</p>
+    <input id="token-input" type="password" placeholder="token">
+    <button class="primary" onclick="login()" style="width:100%">Unlock</button>
+    <div id="login-msg"></div>
+  </div>
+</div>
+
+<header>
+  <h1>Pipeline Dashboard</h1>
+  <span id="status-pill" class="pill idle">checking…</span>
+  <span class="spacer"></span>
+  <button id="btn-dry" onclick="startRun('dry')">Dry run</button>
+  <button id="btn-run" class="primary" onclick="startRun('upload')">Run now (upload)</button>
+  <button onclick="logout()">Logout</button>
+</header>
+
+<nav>
+  <button class="active" data-tab="run">Run</button>
+  <button data-tab="config">Config</button>
+  <button data-tab="posted">Posted</button>
+  <button data-tab="videos">Videos</button>
+  <button data-tab="logs">Logs</button>
+</nav>
+
+<main>
+  <section id="tab-run">
+    <div class="card">
+      <div class="grid">
+        <div class="stat"><div class="label">Status</div><div class="value"><span id="s-status">–</span></div></div>
+        <div class="stat"><div class="label">Mode</div><div class="value" id="s-mode">–</div></div>
+        <div class="stat"><div class="label">Started</div><div class="value" id="s-started">–</div></div>
+        <div class="stat"><div class="label">Schedule (cron)</div><div class="value" id="s-schedule">–</div></div>
+        <div class="stat"><div class="label">Lock pid</div><div class="value" id="s-lock">–</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center">
+        <b>Live run log</b>
+        <span class="muted" id="runlog-file"></span>
+      </div>
+      <pre id="runlog"></pre>
+    </div>
+  </section>
+
+  <section id="tab-config" style="display:none">
+    <div class="card">
+      <p class="muted">Edit <code>config/config.json</code> directly and save. Changes apply on the
+        next run. See the README for what each field does.</p>
+      <textarea id="config-editor" spellcheck="false"></textarea>
+      <div style="display:flex; gap:10px; margin-top:12px">
+        <button onclick="loadConfig()">Reload from disk</button>
+        <button class="primary" onclick="saveConfig()">Save config</button>
+        <span class="spacer"></span>
+        <button id="cfg-format" onclick="formatConfig()">Format</button>
+      </div>
+      <div id="cfg-msg" class="msg"></div>
+    </div>
+  </section>
+
+  <section id="tab-posted" style="display:none">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center">
+        <b>Posted story ids</b>
+        <button id="btn-reload-posts" onclick="loadPosts()">Reload</button>
+      </div>
+      <p class="muted">These stories are skipped by the scraper so nothing gets re-posted.
+        Removing one lets it be picked again.</p>
+      <table>
+        <thead><tr><th>Story id</th><th></th></tr></thead>
+        <tbody id="posts-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="tab-videos" style="display:none">
+    <div class="card">
+      <div class="videos" id="videos-grid"></div>
+    </div>
+  </section>
+
+  <section id="tab-logs" style="display:none">
+    <div class="card">
+      <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px">
+        <b>Log file</b>
+        <select id="log-select" onchange="loadLog()"></select>
+        <button onclick="loadLog()">Refresh</button>
+      </div>
+      <pre id="logview"></pre>
+    </div>
+  </section>
+</main>
+
+<script>
+const API = "";
+let token = sessionStorage.getItem("dash_token") || "";
+let state = null;
+
+function headers(extra = {}) {
+  return { "Authorization": "Bearer " + token, "Content-Type": "application/json", ...extra };
+}
+function authUrl(u) { return u; }
+async function api(u, opts = {}) {
+  const res = await fetch(authUrl(u), { ...opts, headers: headers(opts.headers || {}) });
+  if (res.status === 401) { logout(); throw new Error("unauthorized"); }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || res.statusText);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+// --- auth ---
+async function login() {
+  token = document.getElementById("token-input").value.trim();
+  try {
+    await api("/api/auth/check", { method: "POST" });
+    sessionStorage.setItem("dash_token", token);
+    boot();
+  } catch (e) {
+    document.getElementById("login-msg").innerHTML =
+      `<div class="msg err">Bad token: ${e.message}</div>`;
+  }
+}
+function logout() {
+  sessionStorage.removeItem("dash_token");
+  token = "";
+  document.getElementById("login").style.display = "flex";
+}
+async function boot() {
+  document.getElementById("login").style.display = "none";
+  initTabs();
+  loadConfig();
+  loadPosts();
+  loadVideos();
+  loadLogFiles();
+  pollStatus();
+  setInterval(pollStatus, 4000);
+}
+
+// --- tabs ---
+function initTabs() {
+  document.querySelectorAll("nav button").forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll("nav button").forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      document.querySelectorAll("main > section").forEach(s => s.style.display = "none");
+      document.getElementById("tab-" + b.dataset.tab).style.display = "";
+      if (b.dataset.tab === "logs") loadLog();
+    };
+  });
+}
+
+// --- status & run ---
+async function pollStatus() {
+  try {
+    state = await api("/api/status");
+  } catch (e) { return; }
+  const pill = document.getElementById("status-pill");
+  const run = state.running;
+  pill.className = "pill " + (run ? (state.mode === "dry" ? "dry" : "run") : "idle");
+  pill.textContent = run ? "RUNNING (" + state.mode + ")" : "idle";
+  document.getElementById("s-status").textContent = run ? "Running" : "Idle";
+  document.getElementById("s-mode").textContent = run ? state.mode : "–";
+  document.getElementById("s-started").textContent = state.started ? state.started.replace("T", " ").slice(0, 19) : "–";
+  document.getElementById("s-schedule").textContent = state.schedule ? state.schedule : "–";
+  document.getElementById("s-lock").textContent = state.lock_pid ? state.lock_pid : "–";
+  document.getElementById("btn-run").disabled = run;
+  document.getElementById("btn-dry").disabled = run;
+  if (run) { fetchRunLog(); }
+}
+
+async function fetchRunLog() {
+  const file = state && state.run_log ? "&file=" + encodeURIComponent(state.run_log) : "";
+  try {
+    const d = await api("/api/logs?n=300" + file);
+    if (d.file) document.getElementById("runlog-file").textContent = d.file;
+    const el = document.getElementById("runlog");
+    el.textContent = d.lines.join("\n");
+    el.scrollTop = el.scrollHeight;
+  } catch (e) {}
+}
+
+async function startRun(mode) {
+  if (state && state.running) return;
+  try {
+    const d = await api("/api/run", { method: "POST", body: JSON.stringify({ mode }) });
+    document.getElementById("runlog").textContent = "";
+    pollStatus();
+  } catch (e) {
+    alert("Could not start run: " + e.message);
+  }
+}
+
+// --- config ---
+async function loadConfig() {
+  try {
+    const cfg = await api("/api/config");
+    document.getElementById("config-editor").value = JSON.stringify(cfg, null, 2);
+    document.getElementById("cfg-msg").className = "msg";
+  } catch (e) {}
+}
+function formatConfig() {
+  try {
+    document.getElementById("config-editor").value =
+      JSON.stringify(JSON.parse(document.getElementById("config-editor").value), null, 2);
+  } catch (e) { setMsg("cfg-msg", "Not valid JSON: " + e.message, true); }
+}
+async function saveConfig() {
+  try {
+    JSON.parse(document.getElementById("config-editor").value);
+  } catch (e) { return setMsg("cfg-msg", "Not valid JSON: " + e.message, true); }
+  try {
+    const res = await fetch("/api/config", {
+      method: "POST",
+      headers: headers(),
+      body: document.getElementById("config-editor").value,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || res.statusText);
+    setMsg("cfg-msg", "Config saved.", false);
+  } catch (e) { setMsg("cfg-msg", e.message, true); }
+}
+function setMsg(id, text, err) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = "msg " + (err ? "err" : "ok");
+}
+
+// --- posted ---
+async function loadPosts() {
+  try {
+    const d = await api("/api/posts");
+    const body = document.getElementById("posts-body");
+    body.innerHTML = "";
+    for (const id of d.posts) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${escapeHtml(id)}</td>` +
+        `<td style="text-align:right"><button class="danger" onclick="removePost('${escapeHtml(id)}')">Remove</button></td>`;
+      body.appendChild(tr);
+    }
+    if (!d.posts.length) body.innerHTML = `<tr><td colspan="2" class="muted">Nothing posted yet.</td></tr>`;
+  } catch (e) {}
+}
+async function removePost(id) {
+  if (!confirm("Forget " + id + " so it can be picked again?")) return;
+  try { await api("/api/posts/" + encodeURIComponent(id), { method: "DELETE" }); loadPosts(); }
+  catch (e) { alert(e.message); }
+}
+
+// --- videos ---
+async function loadVideos() {
+  try {
+    const d = await api("/api/videos");
+    const grid = document.getElementById("videos-grid");
+    grid.innerHTML = "";
+    if (!d.videos.length) { grid.innerHTML = `<p class="muted">No rendered videos yet.</p>`; return; }
+    for (const v of d.videos) {
+      const div = document.createElement("div");
+      div.className = "video";
+      div.innerHTML = `<div class="name">${escapeHtml(v.name)}</div>` +
+        `<span class="muted">${v.size_mb} MB · ${(v.mtime || "").replace("T", " ").slice(0, 16)}</span><br>` +
+        `<a href="/api/video/${encodeURIComponent(v.name)}" target="_blank">▶ watch</a>`;
+      grid.appendChild(div);
+    }
+  } catch (e) {}
+}
+
+// --- logs ---
+async function loadLogFiles() {
+  try {
+    const d = await api("/api/logs/list");
+    const sel = document.getElementById("log-select");
+    sel.innerHTML = "";
+    for (const f of d.files) {
+      const opt = document.createElement("option");
+      opt.value = f; opt.textContent = f;
+      sel.appendChild(opt);
+    }
+    if (d.files.length) loadLog();
+  } catch (e) {}
+}
+async function loadLog() {
+  const sel = document.getElementById("log-select");
+  if (!sel.value) return;
+  try {
+    const d = await api("/api/logs?n=400&file=" + encodeURIComponent(sel.value));
+    const el = document.getElementById("logview");
+    el.textContent = d.lines.join("\n");
+    el.scrollTop = el.scrollHeight;
+  } catch (e) {}
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// --- entry ---
+if (token) {
+  api("/api/auth/check", { method: "POST" }).then(boot).catch(logout);
+}
+</script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 import argparse
+import atexit
 import json
 import os
 import sys
@@ -61,6 +62,24 @@ def main():
 
     base_dir = Path(__file__).resolve().parent.parent
     cfg = load_config(resolve(base_dir, args.config))
+
+    lock_path = base_dir / "logs" / "run.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    if lock_path.exists():
+        stale_pid = lock_path.read_text().strip()
+        if stale_pid.isdigit():
+            try:
+                os.kill(int(stale_pid), 0)
+            except ProcessLookupError:
+                log.warning("Removing stale run.lock from dead process %s", stale_pid)
+                lock_path.unlink(missing_ok=True)
+        if lock_path.exists():
+            raise RuntimeError(
+                "Another pipeline run is already in progress "
+                f"(logs/run.lock pid {stale_pid}). Wait for it to finish."
+            )
+    lock_path.write_text(str(os.getpid()))
+    atexit.register(lock_path.unlink, missing_ok=True)
 
     paths = cfg["paths"]
     for key in ("gameplay_dir", "audio_dir", "video_dir", "thumbnail_dir"):
