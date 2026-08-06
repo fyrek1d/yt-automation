@@ -136,6 +136,23 @@ class StoryScraper:
         lowered = combined.lower()
         return any(k in lowered for k in self.blocked_keywords)
 
+    _PROMPT_RE = re.compile(
+        r"\?\s*$|"
+        r"^(whats|what's|what is|what are|what was|what were|what did|what do|what would|"
+        r"how did|how do|how would|how are|how is|how was|how to|"
+        r"who here|who has|who else|who wants|"
+        r"does anyone|do you|have you|did you|are you|is there|has anyone|"
+        r"anyone else|redditors|tell me|share your|share the|share a|best of|"
+        r"aita|aitah|am i the)",
+        re.IGNORECASE,
+    )
+
+    def _is_prompt(self, title: str) -> bool:
+        """Reject question-style or community-request prompt threads (e.g.
+        \"What's the craziest story that ever happened to you?\") which read as
+        asks rather than narratives and make for boring narration."""
+        return bool(self._PROMPT_RE.search(title))
+
     def _build_story(
         self, sub: str, post_id: str, title: str, body: str,
         score: int = 0, permalink: str = "",
@@ -147,6 +164,8 @@ class StoryScraper:
         if not combined or combined in {"[deleted]", "[removed]", "."}:
             return None
         if self._is_blocked(combined):
+            return None
+        if self._is_prompt(title):
             return None
         word_count = len(combined.split())
         if not (self.min_words <= word_count <= self.max_words):
