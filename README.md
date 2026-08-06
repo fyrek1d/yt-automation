@@ -2,6 +2,22 @@
 
 A fully automated pipeline that creates faceless short-form videos: fetches Reddit stories, narrates them with AI text-to-speech, layers them over Minecraft parkour footage, and uploads them to YouTube (with optional TikTok/Instagram cross-posting).
 
+## Quick Start
+
+```bash
+git clone https://github.com/fyrek1d/yt-automation.git
+cd yt-automation
+./setup.sh                # venv + deps + Kokoro TTS models (~350 MB) + config
+./setup.sh --sample-clip  # optional: also generate a placeholder gameplay clip
+```
+
+Then follow the YouTube credentials step below (required to actually upload) and:
+
+```bash
+.venv/bin/python src/main.py --no-upload   # render a test video without uploading
+.venv/bin/python src/main.py               # full run: scrape -> narrate -> render -> upload
+```
+
 ## Overview
 
 1. **Scrape** trending stories from subreddits (AITA, TIFU, relationships, confession, nosleep...)
@@ -16,13 +32,15 @@ A fully automated pipeline that creates faceless short-form videos: fetches Redd
 - MoviePy (bundles its own ffmpeg via `imageio-ffmpeg`)
 - Google Cloud / YouTube Data API v3 credentials for upload
 - Minecraft parkour `.mp4` clips in `assets/gameplay/` (not included in this repo)
-- (Optional) Kokoro ONNX model files for offline TTS
+- (Optional) Kokoro ONNX model files for offline TTS — `./setup.sh` downloads them for you
 
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+./setup.sh
 ```
+
+`setup.sh` is idempotent: it creates the venv, installs `requirements.txt`, downloads the Kokoro TTS models into `assets/kokoro/`, and copies `config/config.example.json` → `config/config.json` if you don't have one yet. Use `--no-kokoro` to skip the ~350 MB download and `--sample-clip` to generate a placeholder gameplay clip so you can test end-to-end before adding real footage.
 
 ### 1. Assets
 
@@ -57,7 +75,20 @@ python src/main.py            # full pipeline: scrape -> narrate -> render -> up
 python src/main.py --no-upload   # render only (dry run)
 ```
 
-### 6. Automate (Linux/Mac)
+### 6. Web dashboard (optional)
+
+Start a self-hosted web UI for triggering runs, editing config, browsing rendered
+videos and posted history:
+
+```bash
+./start_dashboard.sh   # opens http://localhost:8080
+```
+
+The dashboard generates an auth token on first start and stores it in
+`config/dashboard_secret.txt`. To expose it to other devices (e.g. via Tailscale),
+run `.venv/bin/python src/dashboard.py --host 0.0.0.0 --port 8080` instead.
+
+### 7. Automate (Linux/Mac)
 
 Add to crontab to run daily at 9am:
 
@@ -73,6 +104,7 @@ yt-automation/
 │   └── gameplay/              # Your Minecraft parkour clips
 ├── config/
 │   ├── config.json            # Channel settings, subreddits, TTS, tags
+│   ├── config.example.json    # Template copied by setup.sh
 │   ├── reddit.ini.template    # Optional Reddit API credentials template
 │   └── (secrets — gitignored: client_secret.json, token.json, keys)
 ├── logs/                      # Gitignored: posted.json + run logs
@@ -86,10 +118,20 @@ yt-automation/
 │   ├── uploader.py            # YouTube upload
 │   ├── crosspost.py           # TikTok + Instagram clients
 │   ├── auth_tiktok.py         # One-time TikTok OAuth
-│   └── auth_instagram.py      # One-time Instagram OAuth
+│   ├── auth_instagram.py      # One-time Instagram OAuth
+│   ├── dashboard.py           # Web dashboard (Flask)
+│   └── dashboard.html         # Web dashboard UI
 ├── requirements.txt
+├── setup.sh                   # One-command setup (venv, deps, models, config)
+├── start_dashboard.sh         # Start/restart the web dashboard
 └── README.md
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE). Note that Reddit story content and any gameplay
+footage are **not** covered by this license; you are responsible for the rights
+to any media you feed the pipeline.
 
 ## Notes
 
