@@ -436,56 +436,6 @@ class TTS:
             timings = self.estimate_word_timings(text, duration)
         return out_path, timings
 
-    @staticmethod
-    def _fill_run(timings, words, word_idx, weights, seg_start, seg_end):
-        """Append phoneme-weighted caption times for the given word indices,
-        distributed across the audio span [seg_start, seg_end)."""
-        dur = max(0.0, seg_end - seg_start)
-        total_w = sum(weights[i] for i in word_idx) or 1
-        t = seg_start
-        for i in word_idx:
-            d = dur * weights[i] / total_w
-            timings.append((words[i], t, t + d))
-            t += d
-
-    @staticmethod
-    def _detect_pauses(audio, sr: int, thr: float = 0.02,
-                       min_len: float = 0.06, edge: float = 0.12):
-        """Return (start, end) seconds of quiet regions away from the edges."""
-        import numpy as np
-
-        total = len(audio) / sr
-        frame = int(0.02 * sr)
-        n = max(1, (len(audio) - frame) // frame)
-        rms = np.array(
-            [
-                float(np.sqrt(np.mean(audio[i * frame:(i + 1) * frame] ** 2)))
-                for i in range(n)
-            ]
-        )
-        quiet = rms < thr
-        out = []
-        start = None
-        for i, q in enumerate(quiet):
-            if q and start is None:
-                start = i * 0.02
-            elif not q and start is not None:
-                if (
-                    (i * 0.02 - start) > min_len
-                    and start > edge
-                    and i * 0.02 < total - edge
-                ):
-                    out.append((start, i * 0.02))
-                start = None
-        if (
-            start is not None
-            and (len(rms) * 0.02 - start) > min_len
-            and start > edge
-            and len(rms) * 0.02 < total - edge
-        ):
-            out.append((start, len(rms) * 0.02))
-        return out
-
     def _whisper(self):
         """Lazily load the whisper forced-alignment model (cached)."""
         if self._whisper_model is None:
@@ -561,19 +511,6 @@ class TTS:
             s = max(0.0, mid - 0.09)
             e = min(total, mid + 0.09)
         return s, e
-
-    @staticmethod
-    def _trim_silence(audio, sr: int, keep: float = 0.03):
-        """Trim leading/trailing silence, keeping a small breath margin."""
-        import numpy as np
-
-        idx = np.nonzero(np.abs(audio) > 0.03)[0]
-        if len(idx) == 0:
-            return audio
-        keep_n = int(sr * keep)
-        start = max(0, int(idx[0]) - keep_n)
-        end = min(len(audio), int(idx[-1]) + keep_n)
-        return audio[start:end]
 
     def _explicit_regex(self):
         if self._regex is None:
