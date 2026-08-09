@@ -92,6 +92,7 @@ class TTS:
         self.explicit_words = explicit_words or []
         self.bleep_style = bleep_style or "dual"
         self._regex = None
+        self._whisper_model = None
 
     @staticmethod
     def _prep(text: str) -> str:
@@ -312,51 +313,83 @@ class TTS:
 
         regex = self._explicit_regex()
 
-        # Censored path: the profane word is never spoken. Replace each
-        # explicit word with a comma pause and speak the whole sentence in one
-        # pass (natural prosody, no stretched fragments). The bleep is then
-        # overwritten onto the real pause regions found in the audio.
+        # Censored path: kokoro speaks the whole sentence naturally (including
+        # the profanity) so prosody, pacing and captions stay normal. We then
+        # force-align the audio with whisper to get exact word timestamps,
+        # overwrite the profane words with a bleep, and caption the rest at
+        # their real times.
         words = re.findall(r"\S+", text)
         is_bad = [bool(regex.search(w)) for w in words]
         if self.explicit_words and any(is_bad):
-            repl = " ".join(["," if b else w for w, b in zip(words, is_bad)])
-            full, sr = synth(repl)
+            full, sr = synth(text)
             total = len(full) / sr
 
-            # Phoneme counts are the best duration proxy kokoro exposes.
-            phw = kokoro.tokenizer.phonemize(repl, "en-us").split(" ")
+            aligned = self._align_words(full, sr, text, len(words))
+            if aligned is not None:
+                # Bleep regions: whisper word span expanded into adjacent
+                # low-energy sound (quiet fricatives, decays, trailing pause)
+                # so the bleep fully covers the word without eating loud speech.
+                spans = [self._bleep_span(full, sr, s, e) for _, s, e in aligned]
+                timings = []
+                for i, (w, s, e) in enumerate(aligned):
+                    if is_bad[i]:
+                        bs, be = spans[i]
+                        timings.append((self.censor_display(words[i]), bs, be))
+                    else:
+                        timings.append((words[i], s, e))
+                for i, (w, s, e) in enumerate(aligned):
+                    if not is_bad[i]:
+                        continue
+                    bs, be = spans[i]
+                    si, ei = int(bs * sr), min(len(full), int(be * sr))
+                    beep = self._make_beep(sr, (ei - si) / sr, self.bleep_style)
+                    if len(beep) > ei - si:
+                        beep = beep[: ei - si]
+                    elif len(beep) < ei - si:
+                        beep = np.concatenate(
+                            [beep, np.zeros(ei - si - len(beep), dtype=np.float32)]
+                        )
+                    full[si:ei] = beep
+                # Keep captions from drifting across a bleep: trim any word that
+                # would overlap its bleep region.
+                for i, (w, s, e) in enumerate(timings):
+                    if is_bad[i]:
+                        continue
+                    for j, bad in enumerate(is_bad):
+                        if not bad:
+                            continue
+                        bs, be = spans[j]
+                        if bs < e and be > s:
+                            if bs >= s and be >= e:
+                                e = bs
+                            elif be <= e and bs <= s:
+                                s = be
+                    timings[i] = (w, s, e)
+                sf.write(out_path, full, sr)
+                return out_path, timings
+
+            # Fallback (alignment failed): distribute by phoneme counts.
+            phw = kokoro.tokenizer.phonemize(text, "en-us").split(" ")
             if len(phw) == len(words):
                 weights = [max(1, len(pw)) for pw in phw]
             else:
                 weights = [max(1, len(w)) for w in words]
             total_w = sum(weights) or 1
-
-            # Match each profane slot to the nearest real pause (in order) and
-            # overwrite that region with a bleep.
-            beeps = {}
-            pauses = self._detect_pauses(full, sr)
-            last_ps = 0.0
+            timings = []
+            t = 0.0
+            for i, w in enumerate(words):
+                d = total * weights[i] / total_w
+                if is_bad[i]:
+                    mid = max(0.14, min(total - 0.14, t + d / 2))
+                    timings.append((self.censor_display(w), mid - 0.11, mid + 0.11))
+                else:
+                    timings.append((w, t, t + d))
+                t += d
             for i, bad in enumerate(is_bad):
                 if not bad:
                     continue
-                cand = total * sum(weights[:i]) / total_w
-                best = None
-                for ps, pe in pauses:
-                    if ps < last_ps - 0.05:
-                        continue
-                    if ps - 0.4 < cand < pe + 0.4:
-                        dist = abs((ps + pe) / 2 - cand)
-                        if best is None or dist < best[0]:
-                            best = (dist, ps, pe)
-                if best:
-                    _, ps, pe = best
-                    last_ps = ps
-                    bs, be = ps, pe
-                else:
-                    mid = max(0.14, min(total - 0.14, cand))
-                    bs, be = mid - 0.14, mid + 0.14
-                beeps[i] = (bs, be)
-                si, ei = int(bs * sr), min(len(full), int(be * sr))
+                s, e = timings[i][1], timings[i][2]
+                si, ei = int(s * sr), min(len(full), int(e * sr))
                 beep = self._make_beep(sr, (ei - si) / sr, self.bleep_style)
                 if len(beep) > ei - si:
                     beep = beep[: ei - si]
@@ -365,30 +398,6 @@ class TTS:
                         [beep, np.zeros(ei - si - len(beep), dtype=np.float32)]
                     )
                 full[si:ei] = beep
-
-            # Captions: profane words span their bleep; each clean run of words
-            # is timed across its own audio span (between bleeps) so captions
-            # never drift across a beep.
-            timings = []
-            run_words = []
-            seg_start = 0.0
-            for i, w in enumerate(words):
-                if i in beeps:
-                    if run_words:
-                        self._fill_run(
-                            timings, words, run_words, weights, seg_start,
-                            beeps[i][0],
-                        )
-                        run_words = []
-                    bs, be = beeps[i]
-                    timings.append((self.censor_display(w), bs, be))
-                    seg_start = be
-                else:
-                    run_words.append(i)
-            if run_words:
-                self._fill_run(
-                    timings, words, run_words, weights, seg_start, total
-                )
             sf.write(out_path, full, sr)
             return out_path, timings
 
@@ -476,6 +485,82 @@ class TTS:
         ):
             out.append((start, len(rms) * 0.02))
         return out
+
+    def _whisper(self):
+        """Lazily load the whisper forced-alignment model (cached)."""
+        if self._whisper_model is None:
+            from faster_whisper import WhisperModel
+
+            self._whisper_model = WhisperModel(
+                "tiny", device="cpu", compute_type="int8"
+            )
+        return self._whisper_model
+
+    def _align_words(self, audio, sr: int, text: str, expected: int):
+        """Return whisper word timestamps as (word, start, end), or None if the
+        alignment is unreliable (model load failure or word count mismatch)."""
+        import io
+
+        buf = io.BytesIO()
+        import soundfile as sf
+
+        sf.write(buf, audio, sr, format="WAV")
+        buf.seek(0)
+        try:
+            segs, _ = self._whisper().transcribe(
+                buf,
+                word_timestamps=True,
+                language="en",
+                beam_size=1,
+                condition_on_previous_text=False,
+            )
+            out = []
+            for s in segs:
+                for w in s.words:
+                    out.append((w.word.strip().lower(), float(w.start), float(w.end)))
+            if len(out) != expected:
+                return None
+            return out
+        except Exception:
+            return None
+
+    @staticmethod
+    def _bleep_span(audio, sr: int, ws: float, we: float,
+                    max_margin: float = 0.10, thr: float = 0.06):
+        """Expand a whisper word span into adjacent low-energy audio so the
+        bleep covers the word's quiet fricative/decay edges without eating loud
+        speech. Guarantees at least ~0.18s so the bleep reads clearly."""
+        import numpy as np
+
+        total = len(audio) / sr
+        frame = int(0.01 * sr)
+        rms = np.array(
+            [
+                np.sqrt(np.mean(audio[i * frame:(i + 1) * frame] ** 2))
+                for i in range(len(audio) // frame)
+            ]
+        )
+
+        def low(t):
+            return bool(rms[int(t * 100)] < thr)
+
+        s = ws
+        while s > 0 and s > ws - max_margin:
+            if low(s - 0.01):
+                s -= 0.01
+            else:
+                break
+        e = we
+        while e < total and e < we + max_margin:
+            if low(e):
+                e += 0.01
+            else:
+                break
+        if e - s < 0.18:
+            mid = (ws + we) / 2
+            s = max(0.0, mid - 0.09)
+            e = min(total, mid + 0.09)
+        return s, e
 
     @staticmethod
     def _trim_silence(audio, sr: int, keep: float = 0.03):
