@@ -98,16 +98,8 @@ def main():
     if paths.get("reddit_ini"):
         paths["reddit_ini"] = resolve(base_dir, paths["reddit_ini"])
 
-    # 1. Get a story -------------------------------------------------------
-    scraper = StoryScraper(
-        subreddits=cfg["content"]["subreddits"],
-        log_path=paths["log_path"],
-        min_words=cfg["content"]["min_words"],
-        max_words=cfg["content"]["max_words"],
-        reddit_ini=paths.get("reddit_ini"),
-        blocked_keywords=cfg["content"].get("blocked_keywords"),
-    )
-
+    # Load explicit-word list up front so both TTS censoring and title
+    # prioritisation in the scraper use the same words.
     tts_cfg = cfg["tts"]
     explicit_words = cfg["content"].get("explicit_words") or []
     ew_file = cfg["content"].get("explicit_words_file")
@@ -119,6 +111,18 @@ def main():
             except json.JSONDecodeError as e:
                 log.warning(f"Ignoring {ew_path}: {e}")
     explicit_words = list(dict.fromkeys(explicit_words))
+
+    # 1. Get a story -------------------------------------------------------
+    scraper = StoryScraper(
+        subreddits=cfg["content"]["subreddits"],
+        log_path=paths["log_path"],
+        min_words=cfg["content"]["min_words"],
+        max_words=cfg["content"]["max_words"],
+        reddit_ini=paths.get("reddit_ini"),
+        blocked_keywords=cfg["content"].get("blocked_keywords"),
+        profanity_words=explicit_words,
+    )
+
     tts = TTS(
         lang=tts_cfg.get("lang", "en"),
         slow=tts_cfg.get("slow", False),

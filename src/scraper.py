@@ -87,6 +87,7 @@ class StoryScraper:
         max_words: int = MAX_WORDS,
         reddit_ini: Optional[str] = None,
         blocked_keywords: list = None,
+        profanity_words: list = None,
     ):
         self.subreddits = subreddits
         self.min_words = min_words
@@ -94,6 +95,8 @@ class StoryScraper:
         self.blocked_keywords = [
             k.lower() for k in (blocked_keywords or [])
         ]
+        self.profanity_words = list(profanity_words or [])
+        self._profanity_re = None
         self.log_path = log_path
         self._posted = self._load_log()
         self.reddit = self._init_praw(reddit_ini)
@@ -170,6 +173,21 @@ class StoryScraper:
         \"What's the craziest story that ever happened to you?\") which read as
         asks rather than narratives and make for boring narration."""
         return bool(self._PROMPT_RE.search(title))
+
+    def _has_title_profanity(self, title: str) -> bool:
+        """True if the title contains an explicit word (whole-word, any case).
+        Used to prefer clean titles when picking a story."""
+        if not self.profanity_words:
+            return False
+        if self._profanity_re is None:
+            words = sorted(self.profanity_words, key=len, reverse=True)
+            pattern = (
+                r"(?<![a-zA-Z])("
+                + "|".join(re.escape(w) for w in words)
+                + r")(?![a-zA-Z])"
+            )
+            self._profanity_re = re.compile(pattern, re.IGNORECASE)
+        return bool(self._profanity_re.search(title))
 
     def _build_story(
         self, sub: str, post_id: str, title: str, body: str,
@@ -428,7 +446,11 @@ def pick_story(scraper: StoryScraper, limit: int = 25) -> dict:
             "For testing, clear logs/posted.json to allow reuse."
         )
     top = stories[:15]
-    weights = [max(s["score"], 1) for s in top]
+    # Prefer stories with clean titles; only fall back to profane-title
+    # stories if nothing clean is available (the title still gets censored).
+    clean = [s for s in top if not scraper._has_title_profanity(s["title"])]
+    pool = clean if clean else top
+    weights = [max(s["score"], 1) for s in pool]
     total = sum(weights)
     weights = [w / total for w in weights]
-    return random.choices(top, weights=weights, k=1)[0]
+    return random.choices(pool, weights=weights, k=1)[0]
