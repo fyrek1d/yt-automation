@@ -46,6 +46,15 @@ def main():
     words = fetch_words(args.url)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        try:
+            existing = json.loads(out.read_text())
+            words = sorted(
+                set(words) | {w for w in existing if isinstance(w, str) and w},
+                key=lambda w: (-len(w), w),
+            )
+        except json.JSONDecodeError:
+            pass  # corrupt/empty existing file: just use the download
     out.write_text(json.dumps(words, indent=2))
     print(f"Wrote {len(words)} words to {out}")
 
