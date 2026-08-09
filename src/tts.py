@@ -295,6 +295,71 @@ class TTS:
         import soundfile as sf
 
         kokoro = self._load_kokoro()
+
+        def synth(text_: str):
+            chunks = []
+
+            async def _run():
+                async for part, sr in kokoro.create_stream(
+                    text_, voice=self.kokoro_voice, speed=self.speed
+                ):
+                    chunks.append((part, sr))
+
+            asyncio.run(_run())
+            if not chunks:
+                raise RuntimeError("Kokoro produced no audio")
+            return np.concatenate([a for a, _ in chunks]), chunks[0][1]
+
+        regex = self._explicit_regex()
+
+        # Censored path: the profane word is never spoken. Split the text into
+        # clean runs around each explicit word, speak each run on its own, and
+        # lay a bleep exactly between runs so no estimated window can miss it.
+        if self.explicit_words and regex.search(text):
+            parts = []  # ("clean", run_text) | ("bleep", word)
+            run = []
+            for w in re.findall(r"\S+", text):
+                if regex.search(w):
+                    if run:
+                        parts.append(("clean", " ".join(run)))
+                        run = []
+                    parts.append(("bleep", w))
+                else:
+                    run.append(w)
+            if run:
+                parts.append(("clean", " ".join(run)))
+
+            cache = {}
+            sr = None
+            for kind, content in parts:
+                if kind == "clean":
+                    cache[content], sr = synth(content)
+            if sr is None:
+                sr = 24000  # kokoro-v1.0 rate (only if text is all profanity)
+            out = []
+            timings = []
+            t = 0.0
+            for kind, content in parts:
+                if kind == "bleep":
+                    beep_dur = 0.32
+                    out.append(self._make_beep(sr, beep_dur, self.bleep_style))
+                    timings.append(
+                        (self.censor_display(content), t, t + beep_dur)
+                    )
+                    t += beep_dur
+                else:
+                    audio = cache[content]
+                    dur = len(audio) / sr
+                    out.append(audio)
+                    for w, s, e in self.estimate_word_timings(content, dur):
+                        timings.append((w, t + s, t + e))
+                    t += dur
+            full = np.concatenate(out)
+            sf.write(out_path, full, sr)
+            return out_path, timings
+
+        # No profanity: synthesize in one pass and distribute each streamed
+        # clause's audio across its words for approximate captions.
         chunks = []
 
         async def _run():
@@ -310,8 +375,6 @@ class TTS:
         full = np.concatenate([a for a, _ in chunks])
         sf.write(out_path, full, sr)
 
-        # Kokoro streams clause-by-clause (splits at sentence punctuation), so
-        # distribute each clause's audio across its words for accurate captions.
         clauses = [
             c.strip()
             for c in re.findall(r"[^.!?;]+[.!?;]?", text)
@@ -328,10 +391,6 @@ class TTS:
         else:
             duration = len(full) / sr
             timings = self.estimate_word_timings(text, duration)
-
-        if self.explicit_words:
-            full, timings = self._splice_beeps(full, sr, timings)
-        sf.write(out_path, full, sr)
         return out_path, timings
 
     def _explicit_regex(self):
