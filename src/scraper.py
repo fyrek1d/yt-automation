@@ -33,8 +33,33 @@ try:
 except ImportError:
     praw = None
 
+try:
+    from langdetect import detect, DetectorFactory
+
+    DetectorFactory.seed = 0
+except ImportError:  # langdetect optional; without it no language filtering
+    detect = None
+    DetectorFactory = None
+
 MIN_WORDS = 60
 MAX_WORDS = 140
+
+
+def is_english(text: str, min_len: int = 20) -> bool:
+    """Return True if a story looks like English.
+
+    Uses langdetect on the title + body. Detection failures and very short
+    texts are treated as English so a flaky detector never starves the feed.
+    """
+    if detect is None:
+        return True
+    sample = " ".join((text or "").split())
+    if len(sample) < min_len:
+        return True
+    try:
+        return detect(sample) == "en"
+    except Exception:
+        return True
 
 # Reddit caps unauthenticated traffic at ~10 queries/min per IP. Our scraper
 # runs several requests back-to-back (combined feed, per-sub feeds, retries),
@@ -425,12 +450,17 @@ class StoryScraper:
                     break
                 time.sleep(1)
 
-        # Deduplicate
+        # Deduplicate, keep only English stories, then sort by score.
         seen, unique = set(), []
         for s in stories:
-            if s["id"] not in seen:
-                seen.add(s["id"])
-                unique.append(s)
+            if s["id"] in seen:
+                continue
+            if not is_english(
+                f'{s.get("title", "")} {s.get("full_text", "")}'
+            ):
+                continue
+            seen.add(s["id"])
+            unique.append(s)
         unique.sort(key=lambda s: s["score"], reverse=True)
         return unique
 
