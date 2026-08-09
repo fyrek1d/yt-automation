@@ -73,6 +73,7 @@ class TTS:
         voices_path: str = None,
         elevenlabs_key_path: str = None,
         explicit_words: list = None,
+        bleep_style: str = "dual",
     ):
         self.lang = lang
         self.slow = slow
@@ -89,6 +90,7 @@ class TTS:
         self.elevenlabs_key_path = elevenlabs_key_path
         self._kokoro = None
         self.explicit_words = explicit_words or []
+        self.bleep_style = bleep_style or "dual"
         self._regex = None
 
     @staticmethod
@@ -356,14 +358,36 @@ class TTS:
         )
 
     @staticmethod
-    def _make_beep(sr: int, duration: float = 0.45) -> "np.ndarray":
+    def _make_beep(
+        sr: int, duration: float = 0.45, style: str = "dual"
+    ) -> "np.ndarray":
         import numpy as np
 
-        n = int(sr * duration)
+        n = max(1, int(sr * duration))
         t = np.arange(n) / sr
-        wave = 0.5 * np.sin(2 * np.pi * 1000.0 * t) + 0.5 * np.sin(
-            2 * np.pi * 1500.0 * t
-        )
+        if style == "tone1k":
+            wave = np.sin(2 * np.pi * 1000.0 * t)
+        elif style == "tone2k":
+            wave = np.sin(2 * np.pi * 2000.0 * t)
+        elif style == "low300":
+            wave = np.sin(2 * np.pi * 300.0 * t)
+        elif style == "noise":
+            wave = np.random.uniform(-1, 1, n)
+        elif style == "sweep":
+            wave = np.sin(2 * np.pi * np.cumsum(np.linspace(300.0, 2000.0, n)) / sr)
+        elif style == "osc":
+            wave = np.sin(
+                2 * np.pi * (1200.0 + 500.0 * np.sin(2 * np.pi * 8.0 * t)) * t
+            )
+        elif style == "double":
+            beep_n = max(1, n // 2 - int(0.03 * sr))
+            b1 = np.sin(2 * np.pi * 1000.0 * t[:beep_n])
+            b2 = np.sin(2 * np.pi * 1000.0 * t[-beep_n:])
+            wave = np.concatenate([b1, np.zeros(n - 2 * beep_n), b2])
+        else:  # "dual" - the current production beep
+            wave = 0.5 * np.sin(2 * np.pi * 1000.0 * t) + 0.5 * np.sin(
+                2 * np.pi * 1500.0 * t
+            )
         fade = max(1, int(0.03 * sr))
         env = np.ones(n)
         env[:fade] = np.linspace(0, 1, fade)
@@ -392,7 +416,9 @@ class TTS:
             real_start = s + offset
             if regex.search(w):
                 beep_dur = max(0.28, (e - s) + 0.02)
-                segs.append(self._make_beep(sr, beep_dur))
+                segs.append(
+                    self._make_beep(sr, beep_dur, self.bleep_style)
+                )
                 out.append(
                     (self.censor_display(w), real_start, real_start + beep_dur)
                 )

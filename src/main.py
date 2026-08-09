@@ -138,6 +138,7 @@ def main():
         voices_path=paths.get("kokoro_voices"),
         elevenlabs_key_path=paths.get("elevenlabs_key"),
         explicit_words=explicit_words,
+        bleep_style=tts_cfg.get("bleep_style", "dual"),
     )
 
     # Narration must land in the Shorts window; otherwise skip the story and
