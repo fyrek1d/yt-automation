@@ -446,10 +446,15 @@ def pick_story(scraper: StoryScraper, limit: int = 25) -> dict:
             "For testing, clear logs/posted.json to allow reuse."
         )
     top = stories[:15]
-    # Prefer stories with clean titles; only fall back to profane-title
-    # stories if nothing clean is available (the title still gets censored).
+    # Only pick stories with clean titles; if every candidate has profanity
+    # in its title, skip the run rather than post a profane-title video.
     clean = [s for s in top if not scraper._has_title_profanity(s["title"])]
-    pool = clean if clean else top
+    if not clean:
+        raise RuntimeError(
+            "No stories with profanity-free titles available; skipping run "
+            "to avoid profanity in the published title."
+        )
+    pool = clean
     weights = [max(s["score"], 1) for s in pool]
     total = sum(weights)
     weights = [w / total for w in weights]
