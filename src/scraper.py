@@ -19,6 +19,7 @@ import random
 import re
 import configparser
 import subprocess
+import threading
 import time
 from typing import Optional
 
@@ -34,6 +35,23 @@ except ImportError:
 
 MIN_WORDS = 60
 MAX_WORDS = 140
+
+# Reddit caps unauthenticated traffic at ~10 queries/min per IP. Our scraper
+# runs several requests back-to-back (combined feed, per-sub feeds, retries),
+# so we self-throttle to stay under the anonymous limit and avoid 429 walls.
+MIN_REQUEST_INTERVAL = 6.5
+_http_lock = threading.Lock()
+_last_request = 0.0
+
+
+def _pace_request() -> None:
+    """Ensure at least MIN_REQUEST_INTERVAL seconds since the last HTTP call."""
+    global _last_request
+    with _http_lock:
+        elapsed = time.monotonic() - _last_request
+        if elapsed < MIN_REQUEST_INTERVAL:
+            time.sleep(MIN_REQUEST_INTERVAL - elapsed)
+        _last_request = time.monotonic()
 BROWSER_UA = (
     "Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0"
 )
@@ -195,6 +213,7 @@ class StoryScraper:
         last_err = None
         curl_missing = False
         for attempt in range(3):
+            _pace_request()
             try:
                 res = subprocess.run(
                     ["curl", "--http1.1", "-sSf", "--compressed",
@@ -214,6 +233,7 @@ class StoryScraper:
                 last_err = e
                 time.sleep(1)
         if curl_missing and requests is not None:
+            _pace_request()
             resp = requests.get(
                 url, headers={"User-Agent": BROWSER_UA}, timeout=timeout
             )
@@ -307,6 +327,30 @@ class StoryScraper:
                 stories.append(story)
         return stories
 
+    # ---- 2.5 Arctic Shift archive -------------------------------------------
+    # Free Pushshift-style archive on a separate host (not throttled by Reddit's
+    # anonymous rate limits). Serves as a reliable fallback when RSS is 429'd.
+    def _fetch_arctic(self, sub: str, size: int) -> list:
+        url = (
+            "https://arctic-shift.photon-reddit.com/api/posts/search"
+            f"?subreddit={sub}&sort_type=created_utc&sort=desc&limit={size}"
+        )
+        data = json.loads(self._http_get(url)).get("data", [])
+
+        stories = []
+        for p in data:
+            story = self._build_story(
+                sub,
+                p.get("id", ""),
+                p.get("title", ""),
+                p.get("selftext", ""),
+                score=p.get("score", 0),
+                permalink=p.get("permalink", ""),
+            )
+            if story:
+                stories.append(story)
+        return stories
+
     # ---- 3. PRAW -------------------------------------------------------------
     def _fetch_praw(self, sub: str, limit: int) -> list:
         subreddit = self.reddit.subreddit(sub)
@@ -337,9 +381,21 @@ class StoryScraper:
         # Source 1: Reddit RSS (no credentials needed)
         stories = self._try_reddit(limit)
 
-        # Source 2: PullPush archive (if RSS got nothing / was blocked)
+        # Source 2: Arctic Shift archive (free, not affected by Reddit rate limits)
         if not stories:
-            print("RSS yielded nothing; trying PullPush archive...")
+            print("RSS yielded nothing; trying Arctic Shift archive...")
+            for sub in self.subreddits:
+                try:
+                    stories.extend(self._fetch_arctic(sub, 40))
+                except Exception as e:
+                    print(f"  r/{sub} Arctic Shift failed: {e}")
+                if len(stories) >= 10:
+                    break
+                time.sleep(1)
+
+        # Source 3: PullPush archive (if RSS / Arctic Shift got nothing)
+        if not stories:
+            print("RSS/Arctic Shift yielded nothing; trying PullPush archive...")
             per_sub = max(limit // len(self.subreddits), 5)
             for sub in self.subreddits:
                 try:
