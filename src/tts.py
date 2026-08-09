@@ -349,6 +349,10 @@ class TTS:
                     t += beep_dur
                 else:
                     audio = cache[content]
+                    # Kokoro pads every isolated fragment with leading/trailing
+                    # silence and stretches the final word; trim the padding so
+                    # runs don't drag into the beep.
+                    audio = self._trim_silence(audio, sr)
                     dur = len(audio) / sr
                     out.append(audio)
                     for w, s, e in self.estimate_word_timings(content, dur):
@@ -392,6 +396,19 @@ class TTS:
             duration = len(full) / sr
             timings = self.estimate_word_timings(text, duration)
         return out_path, timings
+
+    @staticmethod
+    def _trim_silence(audio, sr: int, keep: float = 0.03):
+        """Trim leading/trailing silence, keeping a small breath margin."""
+        import numpy as np
+
+        idx = np.nonzero(np.abs(audio) > 0.03)[0]
+        if len(idx) == 0:
+            return audio
+        keep_n = int(sr * keep)
+        start = max(0, int(idx[0]) - keep_n)
+        end = min(len(audio), int(idx[-1]) + keep_n)
+        return audio[start:end]
 
     def _explicit_regex(self):
         if self._regex is None:
