@@ -15,8 +15,11 @@ Endpoints:
     POST /api/run              -> {mode: "upload"|"dry"} start a pipeline run
     GET  /api/config           -> current config.json
     POST /api/config           -> save config.json (raw JSON body)
+    GET  /api/options          -> bleep styles, kokoro voices, caption fields
+    POST /api/settings         -> update bleep_style / kokoro_voice / caption
     GET  /api/posts            -> posted story ids
     DELETE /api/posts/<id>     -> forget a story id (allows reposting)
+    GET  /api/published        -> recent published posts (title, link, time)
     GET  /api/videos           -> rendered videos in output/videos
     GET  /api/video/<name>     -> stream a rendered video
     GET  /api/logs/list        -> available log files
@@ -248,6 +251,93 @@ def save_config():
         return jsonify({"error": "Config must be a JSON object."}), 400
     _write_json(CONFIG_PATH, data)
     return jsonify({"ok": True, "saved": True})
+
+
+BLEEP_STYLES = [
+    "dual",
+    "tone1k",
+    "tone2k",
+    "low300",
+    "noise",
+    "sweep",
+    "osc",
+    "double",
+]
+
+CAPTION_FIELDS = {
+    "font_size": {"min": 30, "max": 120, "step": 1, "label": "Font size"},
+    "stroke": {"min": 0, "max": 20, "step": 1, "label": "Outline width"},
+    "highlight_color": {"label": "Highlight color"},
+    "text_color": {"label": "Text color"},
+    "y_landscape": {"min": 0.2, "max": 0.9, "step": 0.01, "label": "Caption Y (landscape)"},
+    "y_portrait": {"min": 0.2, "max": 0.9, "step": 0.01, "label": "Caption Y (portrait)"},
+    "gap_scale": {"min": 0.05, "max": 0.5, "step": 0.01, "label": "Word gap"},
+    "max_words": {"min": 1, "max": 6, "step": 1, "label": "Words per line"},
+    "uppercase": {"label": "All caps"},
+}
+
+
+def _kokoro_voices():
+    """List voice names from the Kokoro voices blob via the config path."""
+    cfg = _read_json(CONFIG_PATH, {})
+    voices_path = cfg.get("paths", {}).get("kokoro_voices")
+    if voices_path and not os.path.isabs(voices_path):
+        voices_path = os.path.join(BASE, voices_path)
+    if not voices_path or not os.path.exists(voices_path):
+        return []
+    try:
+        import re
+
+        data = open(voices_path, "rb").read()
+        names = sorted(
+            set(n.decode() for n in re.findall(rb"[a-z]{2}_[a-z]+", data))
+        )
+        return names
+    except (OSError, ValueError):
+        return []
+
+
+@app.get("/api/options")
+@require_token_decorator
+def get_options():
+    cfg = _read_json(CONFIG_PATH, {})
+    tts = cfg.get("tts", {})
+    caption = cfg.get("caption", {})
+    return jsonify({
+        "bleep_styles": BLEEP_STYLES,
+        "caption_fields": CAPTION_FIELDS,
+        "kokoro_voices": _kokoro_voices(),
+        "current": {
+            "bleep_style": tts.get("bleep_style", "dual"),
+            "kokoro_voice": tts.get("kokoro_voice", ""),
+            "caption": caption,
+        },
+    })
+
+
+@app.post("/api/settings")
+@require_token_decorator
+def save_settings():
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({"error": "Settings must be a JSON object."}), 400
+    cfg = _read_json(CONFIG_PATH, {})
+    tts = cfg.setdefault("tts", {})
+    allowed_tts = {"bleep_style", "kokoro_voice"}
+    for key in allowed_tts & set(body):
+        tts[key] = str(body[key])
+    if isinstance(body.get("caption"), dict):
+        allowed_caption = set(CAPTION_FIELDS)
+        new_caption = {k: v for k, v in body["caption"].items() if k in allowed_caption}
+        cfg.setdefault("caption", {}).update(new_caption)
+    _write_json(CONFIG_PATH, cfg)
+    return jsonify({"ok": True, "saved": True})
+
+
+@app.get("/api/published")
+@require_token_decorator
+def get_published():
+    return jsonify({"records": _read_json(BASE / "logs" / "published.json", [])})
 
 
 @app.get("/api/posts")

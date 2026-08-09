@@ -15,6 +15,19 @@ from moviepy import (
 )
 
 
+DEFAULT_CAPTION = {
+    "font_size": 56,           # base point size, scaled by H/720
+    "stroke": 4,               # outline width, scaled by H/720
+    "highlight_color": "#FFD600",
+    "text_color": "#FFFFFF",
+    "y_landscape": 0.60,       # caption baseline fraction (landscape)
+    "y_portrait": 0.76,        # caption baseline fraction (portrait)
+    "gap_scale": 0.20,         # gap between words as a fraction of font size
+    "max_words": 3,            # words per line
+    "uppercase": False,        # render captions in ALL CAPS
+}
+
+
 class VideoEditor:
     """Combines TTS narration with Minecraft parkour footage."""
 
@@ -76,11 +89,15 @@ class VideoEditor:
         output_dir: str,
         resolution: tuple = (1920, 1080),
         fps: int = 30,
+        caption: dict = None,
     ):
         self.gameplay_dir = gameplay_dir
         self.output_dir = output_dir
         self.resolution = resolution
         self.fps = fps
+        self.caption = dict(DEFAULT_CAPTION)
+        if caption:
+            self.caption.update(caption)
         os.makedirs(output_dir, exist_ok=True)
 
     def pick_gameplay(self) -> str:
@@ -140,9 +157,14 @@ class VideoEditor:
         stripped so we never render blank boxes."""
         W, H = self.resolution
         if font_size is None:
-            font_size = max(40, int(round(56 * H / 720)))
-        stroke = max(2, int(round(4 * H / 720)))
-        rgb = (255, 214, 0) if color == "#FFD600" else (255, 255, 255)
+            font_size = max(40, int(round(self.caption["font_size"] * H / 720)))
+        stroke = max(2, int(round(self.caption["stroke"] * H / 720)))
+        hex_color = color.lstrip("#")
+        rgb = (
+            tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+            if len(hex_color) == 6
+            else (255, 255, 255)
+        )
         font_path = self._find_font(bold=True)
         word = self._sanitize(word, font_path) or " "
         font = ImageFont.truetype(font_path, font_size)
@@ -183,9 +205,11 @@ class VideoEditor:
         visible from its first word to its last, so positions never jump and
         timings match the narration exactly."""
         W, H = self.resolution
-        y = int(H * 0.60) if H > W else int(H * 0.76)
-        font_size = max(40, int(round(56 * H / 720)))
-        gap = int(font_size * 0.20)
+        y = int(H * (self.caption["y_landscape"] if H > W else self.caption["y_portrait"]))
+        font_size = max(40, int(round(self.caption["font_size"] * H / 720)))
+        gap = int(font_size * self.caption["gap_scale"])
+        max_words = max(1, int(self.caption["max_words"]))
+        uppercase = bool(self.caption["uppercase"])
 
         # Drop tokens that become empty after sanitization so we never render
         # blank boxes or orphaned gaps.
@@ -194,18 +218,21 @@ class VideoEditor:
         for w, s, e in word_timings:
             safe = self._sanitize(w, font_path)
             if safe:
+                safe = safe.upper() if uppercase else safe
                 pairs.append((safe, s, e))
         n = len(pairs)
         if n == 0:
             return []
 
-        probe = self._render_word("Ag", "white", font_size)
+        probe = self._render_word("Ag", self.caption["text_color"], font_size)
         line_h = probe[2]
         probe[0].close()
 
         def render_at(start: int, size: int, fs: int):
             rendered = [
-                self._render_word(pairs[start + k][0], "white", fs, line_h)
+                self._render_word(
+                    pairs[start + k][0], self.caption["text_color"], fs, line_h
+                )
                 for k in range(size)
             ]
             widths = [r[1] for r in rendered]
@@ -215,7 +242,7 @@ class VideoEditor:
         word_clips: List = []
         i = 0
         while i < n:
-            size = min(3, n - i)
+            size = min(max_words, n - i)
             fs = font_size
             rendered, widths, total = render_at(i, size, fs)
             while total > W and size > 1:
@@ -255,7 +282,7 @@ class VideoEditor:
                         .with_position(pos)
                     )
                     used_white = True
-                yellow_img = self._render_word(word, "#FFD600", fs, line_h)[0]
+                yellow_img = self._render_word(word, self.caption["highlight_color"], fs, line_h)[0]
                 word_clips.append(
                     yellow_img
                     .with_start(ws)

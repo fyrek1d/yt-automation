@@ -185,6 +185,7 @@ def main():
         output_dir=paths["video_dir"],
         resolution=tuple(vcfg["resolution"]),
         fps=vcfg["fps"],
+        caption=cfg.get("caption"),
     )
     video_path = editor.render(audio_path, story, word_timings=word_timings)
     log.info(f"Video rendered: {video_path}")
@@ -240,11 +241,37 @@ def main():
         )
         log.info(f"Published: https://youtu.be/{video_id}")
         scraper.mark_posted(story["id"])
+        _record_published(base_dir, story, title, video_path, video_id)
         log.info("Done.")
 
     # 7. Cross-post to TikTok / Instagram -------------------------------------
     if not args.no_crosspost:
         _crosspost(cfg, paths, video_path, title, story)
+
+
+def _record_published(base_dir: Path, story: dict, title: str, video_path: str, video_id: str):
+    """Append a recent-post record to logs/published.json for the dashboard.
+
+    The plain posted.json list of ids stays the source of truth for the
+    scraper; this file just adds display metadata (title, links, time)."""
+    from datetime import datetime, timezone
+
+    published_path = base_dir / "logs" / "published.json"
+    record = {
+        "story_id": story["id"],
+        "title": title,
+        "url": story.get("url", ""),
+        "video": os.path.basename(video_path),
+        "video_id": video_id,
+        "published_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        records = json.loads(published_path.read_text()) if published_path.exists() else []
+    except json.JSONDecodeError:
+        records = []
+    records.insert(0, record)
+    records = records[:200]
+    published_path.write_text(json.dumps(records, indent=2))
 
 
 def _crosspost(cfg: dict, paths: dict, video_path: str, title: str, story: dict):

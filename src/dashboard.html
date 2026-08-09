@@ -63,6 +63,17 @@
   .videos { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
   .video { background: var(--panel2); border-radius: 10px; padding: 10px; }
   .video .name { font-weight: 600; margin-bottom: 4px; word-break: break-all; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .form-row { margin-bottom: 8px; }
+  .form-grid label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px;
+                     text-transform: uppercase; letter-spacing: .4px; }
+  .form-grid input[type=number], .form-grid select { width: 100%; padding: 8px; background: var(--panel2);
+                     border: 1px solid var(--border); border-radius: 8px; color: var(--text); }
+  .form-grid input[type=color] { width: 100%; height: 38px; border: 1px solid var(--border);
+                     border-radius: 8px; background: var(--panel2); cursor: pointer; }
+  .form-grid .chk { display: flex; align-items: center; gap: 8px; }
+  .form-grid .chk input { width: auto; }
+  .form-grid .chk label { margin-bottom: 0; text-transform: none; letter-spacing: 0; }
 </style>
 </head>
 <body>
@@ -89,9 +100,10 @@
 
 <nav>
   <button class="active" data-tab="run">Run</button>
-  <button data-tab="config">Config</button>
+  <button data-tab="settings">Settings</button>
   <button data-tab="posted">Posted</button>
   <button data-tab="videos">Videos</button>
+  <button data-tab="config">Config</button>
   <button data-tab="logs">Logs</button>
 </nav>
 
@@ -130,7 +142,44 @@
     </div>
   </section>
 
+  <section id="tab-settings" style="display:none">
+    <div class="card">
+      <b>Subtitle style</b>
+      <p class="muted">Caption appearance for the next rendered video. Changes apply on the next run.</p>
+      <div id="settings-caption" class="form-grid"></div>
+    </div>
+    <div class="card">
+      <b>Bleep sound</b>
+      <p class="muted">Audio used to cover profanity.</p>
+      <div class="form-row">
+        <select id="settings-bleep"></select>
+      </div>
+    </div>
+    <div class="card">
+      <b>Kokoro voice</b>
+      <p class="muted">Narration voice used when the ElevenLabs quota is exceeded.</p>
+      <div class="form-row">
+        <select id="settings-voice"></select>
+      </div>
+    </div>
+    <div class="card">
+      <button class="primary" onclick="saveSettings()">Save settings</button>
+      <button onclick="loadSettings()" style="margin-left:10px">Reload</button>
+      <div id="settings-msg" class="msg"></div>
+    </div>
+  </section>
+
   <section id="tab-posted" style="display:none">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center">
+        <b>Recent posts</b>
+        <button onclick="loadPublished()">Reload</button>
+      </div>
+      <table>
+        <thead><tr><th>Time</th><th>Title</th><th>Link</th></tr></thead>
+        <tbody id="published-body"></tbody>
+      </table>
+    </div>
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center">
         <b>Posted story ids</b>
@@ -203,6 +252,8 @@ async function boot() {
   document.getElementById("login").style.display = "none";
   initTabs();
   loadConfig();
+  loadSettings();
+  loadPublished();
   loadPosts();
   loadVideos();
   loadLogFiles();
@@ -297,6 +348,105 @@ function setMsg(id, text, err) {
   const el = document.getElementById(id);
   el.textContent = text;
   el.className = "msg " + (err ? "err" : "ok");
+}
+
+// --- settings ---
+let options = null;
+async function loadSettings() {
+  try {
+    options = await api("/api/options");
+    renderBleepOptions();
+    renderVoiceOptions();
+    renderCaptionForm();
+  } catch (e) {}
+}
+function renderBleepOptions() {
+  const sel = document.getElementById("settings-bleep");
+  sel.innerHTML = "";
+  for (const s of options.bleep_styles) {
+    const opt = document.createElement("option");
+    opt.value = s; opt.textContent = s;
+    if (s === options.current.bleep_style) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+function renderVoiceOptions() {
+  const sel = document.getElementById("settings-voice");
+  sel.innerHTML = "";
+  const voices = options.kokoro_voices.length ? options.kokoro_voices : ["am_adam"];
+  for (const v of voices) {
+    const opt = document.createElement("option");
+    opt.value = v; opt.textContent = v;
+    if (v === options.current.kokoro_voice) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+function renderCaptionForm() {
+  const box = document.getElementById("settings-caption");
+  box.innerHTML = "";
+  const cur = options.current.caption || {};
+  for (const key of Object.keys(options.caption_fields)) {
+    const meta = options.caption_fields[key];
+    const val = cur[key] !== undefined ? cur[key] : (key === "uppercase" ? false : "");
+    const div = document.createElement("div");
+    if (key === "uppercase") {
+      div.className = "chk";
+      div.innerHTML = `<input type="checkbox" id="cap-${key}" ${val ? "checked" : ""}>` +
+        `<label for="cap-${key}">${meta.label}</label>`;
+    } else if (key.includes("color")) {
+      div.innerHTML = `<label for="cap-${key}">${meta.label}</label>` +
+        `<input type="color" id="cap-${key}" value="${val || "#FFFFFF"}">`;
+    } else if (meta.step === 1) {
+      div.innerHTML = `<label for="cap-${key}">${meta.label}</label>` +
+        `<input type="number" id="cap-${key}" min="${meta.min}" max="${meta.max}" step="1" value="${val}">`;
+    } else {
+      div.innerHTML = `<label for="cap-${key}">${meta.label}</label>` +
+        `<input type="number" id="cap-${key}" min="${meta.min}" max="${meta.max}" step="${meta.step}" value="${val}">`;
+    }
+    box.appendChild(div);
+  }
+}
+async function saveSettings() {
+  const caption = {};
+  for (const key of Object.keys(options.caption_fields)) {
+    const el = document.getElementById("cap-" + key);
+    if (!el) continue;
+    if (key === "uppercase") caption[key] = el.checked;
+    else if (key.includes("color")) caption[key] = el.value;
+    else if (key.includes("y_") || key.includes("gap_")) caption[key] = parseFloat(el.value);
+    else caption[key] = parseInt(el.value, 10);
+  }
+  const body = {
+    caption,
+    bleep_style: document.getElementById("settings-bleep").value,
+    kokoro_voice: document.getElementById("settings-voice").value,
+  };
+  try {
+    await api("/api/settings", { method: "POST", body: JSON.stringify(body) });
+    setMsg("settings-msg", "Settings saved. They apply on the next run.", false);
+  } catch (e) { setMsg("settings-msg", e.message, true); }
+}
+
+// --- published ---
+async function loadPublished() {
+  try {
+    const d = await api("/api/published");
+    const body = document.getElementById("published-body");
+    body.innerHTML = "";
+    if (!d.records.length) {
+      body.innerHTML = `<tr><td colspan="3" class="muted">No posts recorded yet.</td></tr>`;
+      return;
+    }
+    for (const r of d.records) {
+      const tr = document.createElement("tr");
+      const ts = (r.published_at || "").replace("T", " ").slice(0, 16);
+      const yt = r.video_id ? `https://youtu.be/${r.video_id}` : "#";
+      tr.innerHTML = `<td>${escapeHtml(ts)}</td>` +
+        `<td>${escapeHtml(r.title)}<br><span class="muted">${escapeHtml(r.video)}</span></td>` +
+        `<td><a href="${yt}" target="_blank">youtu.be/${escapeHtml(r.video_id || "")}</a></td>`;
+      body.appendChild(tr);
+    }
+  } catch (e) {}
 }
 
 // --- posted ---
