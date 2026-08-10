@@ -270,6 +270,7 @@ async function boot() {
 }
 
 // --- tabs ---
+let activeTab = "";
 function initTabs() {
   document.querySelectorAll("nav button").forEach(b => {
     b.onclick = () => {
@@ -277,9 +278,17 @@ function initTabs() {
       b.classList.add("active");
       document.querySelectorAll("main > section").forEach(s => s.style.display = "none");
       document.getElementById("tab-" + b.dataset.tab).style.display = "";
+      activeTab = b.dataset.tab;
       if (b.dataset.tab === "logs") loadLog();
+      else refreshTab();
     };
   });
+}
+
+function refreshTab() {
+  if (activeTab === "videos") loadVideos();
+  else if (activeTab === "posted") { loadPublished(); loadPosts(); }
+  else if (activeTab === "logs") { loadLogFiles(); }
 }
 
 // --- status & run ---
@@ -299,6 +308,7 @@ async function pollStatus() {
   document.getElementById("btn-run").disabled = run;
   document.getElementById("btn-dry").disabled = run;
   if (run) { fetchRunLog(); }
+  refreshTab();
 }
 
 async function fetchRunLog() {
@@ -547,13 +557,17 @@ async function loadLogFiles() {
   try {
     const d = await api("/api/logs/list");
     const sel = document.getElementById("log-select");
+    const prev = sel.value;
     sel.innerHTML = "";
     for (const f of d.files) {
       const opt = document.createElement("option");
       opt.value = f; opt.textContent = f;
       sel.appendChild(opt);
     }
-    if (d.files.length) loadLog();
+    if (d.files.length) {
+      if (prev && d.files.includes(prev)) sel.value = prev;
+      loadLog();
+    }
   } catch (e) {}
 }
 async function loadLog() {
