@@ -10,6 +10,7 @@ services:
       - ./output:/app/output
       - ./assets:/app/assets:ro
       - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface
+      - /var/spool/cron/crontabs/${USER:-root}:/app/host-crontab:ro
     networks:
       - web
 

@@ -128,6 +128,16 @@ def _cron_schedule():
                 return line.split(" cd ")[0].strip()
     except (subprocess.SubprocessError, OSError):
         pass
+    # Docker container: the host crontab is bind-mounted read-only at
+    # /app/host-crontab so the dashboard can still show the real schedule.
+    mounted = BASE / "host-crontab"
+    if mounted.exists():
+        try:
+            for line in mounted.read_text().splitlines():
+                if "yt-automation" in line and not line.strip().startswith("#"):
+                    return line.split(" cd ")[0].strip()
+        except OSError:
+            pass
     return None
 
 
