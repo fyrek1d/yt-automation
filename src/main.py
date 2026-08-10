@@ -85,6 +85,7 @@ def main():
     for key in ("gameplay_dir", "audio_dir", "video_dir", "thumbnail_dir"):
         paths[key] = resolve(base_dir, paths[key])
     paths["log_path"] = resolve(base_dir, paths["log_path"])
+    paths["meta_path"] = Path(paths["log_path"]).with_name("posts_meta.json")
     paths["client_secret"] = resolve(base_dir, paths["client_secret"])
     paths["token"] = resolve(base_dir, paths["token"])
     for key in (
@@ -116,6 +117,7 @@ def main():
     scraper = StoryScraper(
         subreddits=cfg["content"]["subreddits"],
         log_path=paths["log_path"],
+        meta_path=str(paths["meta_path"]),
         min_words=cfg["content"]["min_words"],
         max_words=cfg["content"]["max_words"],
         reddit_ini=paths.get("reddit_ini"),
@@ -240,7 +242,7 @@ def main():
             privacy_status=privacy,
         )
         log.info(f"Published: https://youtu.be/{video_id}")
-        scraper.mark_posted(story["id"])
+        scraper.mark_posted(story["id"], story.get("title"))
         _record_published(base_dir, story, title, video_path, video_id)
         log.info("Done.")
 

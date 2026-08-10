@@ -147,20 +147,28 @@
       <b>Subtitle style</b>
       <p class="muted">Caption appearance for the next rendered video. Changes apply on the next run.</p>
       <div id="settings-caption" class="form-grid"></div>
+      <div style="margin-top:14px">
+        <img id="caption-preview" alt="Caption preview" style="max-width:220px; width:100%; border-radius:10px; border:1px solid var(--border); display:block">
+        <button onclick="refreshCaptionPreview()" style="margin-top:8px">Refresh preview</button>
+      </div>
     </div>
     <div class="card">
       <b>Bleep sound</b>
       <p class="muted">Audio used to cover profanity.</p>
       <div class="form-row">
         <select id="settings-bleep"></select>
+        <button onclick="playBleep()">Play sample</button>
       </div>
+      <audio id="bleep-audio" controls style="margin-top:8px; display:none"></audio>
     </div>
     <div class="card">
       <b>Kokoro voice</b>
       <p class="muted">Narration voice used when the ElevenLabs quota is exceeded.</p>
       <div class="form-row">
         <select id="settings-voice"></select>
+        <button onclick="playVoice()">Play sample</button>
       </div>
+      <audio id="voice-audio" controls style="margin-top:8px; display:none"></audio>
     </div>
     <div class="card">
       <button class="primary" onclick="saveSettings()">Save settings</button>
@@ -188,7 +196,7 @@
       <p class="muted">These stories are skipped by the scraper so nothing gets re-posted.
         Removing one lets it be picked again.</p>
       <table>
-        <thead><tr><th>Story id</th><th></th></tr></thead>
+        <thead><tr><th>Story</th><th>Title</th><th></th></tr></thead>
         <tbody id="posts-body"></tbody>
       </table>
     </div>
@@ -358,6 +366,7 @@ async function loadSettings() {
     renderBleepOptions();
     renderVoiceOptions();
     renderCaptionForm();
+    refreshCaptionPreview();
   } catch (e) {}
 }
 function renderBleepOptions() {
@@ -403,6 +412,8 @@ function renderCaptionForm() {
       div.innerHTML = `<label for="cap-${key}">${meta.label}</label>` +
         `<input type="number" id="cap-${key}" min="${meta.min}" max="${meta.max}" step="${meta.step}" value="${val}">`;
     }
+    const input = div.querySelector("input");
+    if (input) input.addEventListener("input", refreshCaptionPreview);
     box.appendChild(div);
   }
 }
@@ -425,6 +436,46 @@ async function saveSettings() {
     await api("/api/settings", { method: "POST", body: JSON.stringify(body) });
     setMsg("settings-msg", "Settings saved. They apply on the next run.", false);
   } catch (e) { setMsg("settings-msg", e.message, true); }
+}
+
+// --- previews ---
+async function blobUrl(path) {
+  const res = await fetch(path, { headers: headers() });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  return URL.createObjectURL(await res.blob());
+}
+async function refreshCaptionPreview() {
+  const q = {};
+  for (const key of Object.keys(options.caption_fields)) {
+    const el = document.getElementById("cap-" + key);
+    if (!el) continue;
+    q[key] = el.value;
+  }
+  const qs = Object.keys(q).map(k => encodeURIComponent(k) + "=" + encodeURIComponent(q[k])).join("&");
+  try {
+    const img = document.getElementById("caption-preview");
+    img.src = await blobUrl("/api/preview/caption?" + qs);
+  } catch (e) {}
+}
+async function playBleep() {
+  const style = document.getElementById("settings-bleep").value;
+  try {
+    const url = await blobUrl("/api/preview/bleep?style=" + encodeURIComponent(style));
+    const audio = document.getElementById("bleep-audio");
+    audio.src = url;
+    audio.style.display = "";
+    audio.play().catch(() => {});
+  } catch (e) {}
+}
+async function playVoice() {
+  const voice = document.getElementById("settings-voice").value;
+  try {
+    const url = await blobUrl("/api/preview/voice?voice=" + encodeURIComponent(voice));
+    const audio = document.getElementById("voice-audio");
+    audio.src = url;
+    audio.style.display = "";
+    audio.play().catch(() => {});
+  } catch (e) {}
 }
 
 // --- published ---
@@ -455,13 +506,16 @@ async function loadPosts() {
     const d = await api("/api/posts");
     const body = document.getElementById("posts-body");
     body.innerHTML = "";
+    const titles = d.titles || {};
     for (const id of d.posts) {
       const tr = document.createElement("tr");
+      const title = titles[id] ? escapeHtml(titles[id]) : '<span class="muted">–</span>';
       tr.innerHTML = `<td>${escapeHtml(id)}</td>` +
+        `<td>${title}</td>` +
         `<td style="text-align:right"><button class="danger" onclick="removePost('${escapeHtml(id)}')">Remove</button></td>`;
       body.appendChild(tr);
     }
-    if (!d.posts.length) body.innerHTML = `<tr><td colspan="2" class="muted">Nothing posted yet.</td></tr>`;
+    if (!d.posts.length) body.innerHTML = `<tr><td colspan="3" class="muted">Nothing posted yet.</td></tr>`;
   } catch (e) {}
 }
 async function removePost(id) {

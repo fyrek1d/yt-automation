@@ -304,6 +304,101 @@ class VideoEditor:
 
         return word_clips
 
+    @staticmethod
+    def render_caption_preview(
+        caption: dict = None,
+        resolution: tuple = (540, 960),
+        sample_words: list = None,
+    ) -> "np.ndarray":
+        """Render a static caption-style preview frame (RGB uint8 ndarray).
+
+        Draws a sample line of words on a dark background using the same
+        fonts/sizes/stroke/colors as the real captions, with the middle word
+        highlighted. Used by the dashboard's live caption preview."""
+        import numpy as np
+        from types import SimpleNamespace
+
+        W, H = resolution
+        cap = dict(DEFAULT_CAPTION)
+        if caption:
+            cap.update(caption)
+        y = int(H * (cap["y_portrait"] if H > W else cap["y_landscape"]))
+        font_size = max(40, int(round(cap["font_size"] * H / 720)))
+        stroke = max(2, int(round(cap["stroke"] * H / 720)))
+        gap = int(font_size * cap["gap_scale"])
+        max_words = max(1, int(cap["max_words"]))
+        uppercase = bool(cap["uppercase"])
+        font_path = VideoEditor._find_font(bold=True)
+        _self = SimpleNamespace(
+            resolution=resolution,
+            caption=cap,
+            _find_font=VideoEditor._find_font,
+            _sanitize=VideoEditor._sanitize,
+        )
+
+        words = sample_words or [
+            "I", "never", "told", "anyone", "but", "this", "has",
+            "been", "eating", "me", "alive.",
+        ]
+        safe = []
+        for w in words:
+            s = VideoEditor._sanitize(w, font_path)
+            if s:
+                safe.append(s.upper() if uppercase else s)
+        n = len(safe)
+        if n == 0:
+            return np.zeros((H, W, 3), dtype=np.uint8)
+
+        # Simple dark gradient background so white text is readable.
+        bg = Image.new("RGB", (W, H), (12, 14, 18))
+        px = bg.load()
+        for yy in range(H):
+            t = yy / H
+            v = int(12 + 26 * t)
+            for xx in range(W):
+                px[xx, yy] = (v // 2, v, v)
+
+        font = ImageFont.truetype(font_path, font_size)
+        probe = VideoEditor._render_word(_self, "Ag", cap["text_color"], font_size)
+        line_h = probe[2]
+        probe[0].close()
+
+        def _hex(color: str) -> tuple:
+            c = color.lstrip("#")
+            if len(c) == 6:
+                return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
+            return (255, 255, 255)
+
+        highlight_rgb = _hex(cap["highlight_color"])
+        text_rgb = _hex(cap["text_color"])
+
+        # Choose one line of up to max_words words, centered on the middle
+        # word highlighted so the preview shows the spoken-word effect.
+        start = max(0, (n - max_words) // 2)
+        chunk = safe[start:start + max_words]
+        widths = []
+        for word in chunk:
+            img = VideoEditor._render_word(
+                _self, word, cap["text_color"], font_size, line_h
+            )
+            widths.append(img[1])
+            img[0].close()
+        total = sum(widths) + gap * (len(chunk) - 1)
+        cx = (W - total) // 2
+        hi = len(chunk) // 2
+
+        for i, word in enumerate(chunk):
+            color = highlight_rgb if i == hi else text_rgb
+            img = VideoEditor._render_word(
+                _self, word, "#%02X%02X%02X" % color, font_size, line_h
+            )
+            word_img = Image.fromarray(img[0].get_frame(0)).convert("RGBA")
+            img[0].close()
+            bg.paste(word_img, (cx, y - line_h // 2), mask=word_img)
+            cx += widths[i] + gap
+
+        return np.array(bg)
+
     def render(
         self,
         audio_path: str,

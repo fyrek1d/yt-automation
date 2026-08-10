@@ -108,6 +108,7 @@ class StoryScraper:
         self,
         subreddits: list,
         log_path: str = None,
+        meta_path: str = None,
         min_words: int = MIN_WORDS,
         max_words: int = MAX_WORDS,
         reddit_ini: Optional[str] = None,
@@ -123,7 +124,9 @@ class StoryScraper:
         self.profanity_words = list(profanity_words or [])
         self._profanity_re = None
         self.log_path = log_path
+        self.meta_path = meta_path
         self._posted = self._load_log()
+        self._titles = self._load_titles()
         self.reddit = self._init_praw(reddit_ini)
 
     # ---- persistence ---------------------------------------------------
@@ -133,15 +136,33 @@ class StoryScraper:
                 return set(json.load(f))
         return set()
 
+    def _load_titles(self) -> dict:
+        if self.meta_path and os.path.exists(self.meta_path):
+            try:
+                with open(self.meta_path) as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                return {}
+        return {}
+
     def _save_log(self):
         if self.log_path:
             os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
             with open(self.log_path, "w") as f:
                 json.dump(sorted(self._posted), f, indent=2)
 
-    def mark_posted(self, story_id: str):
+    def _save_titles(self):
+        if self.meta_path:
+            os.makedirs(os.path.dirname(self.meta_path), exist_ok=True)
+            with open(self.meta_path, "w") as f:
+                json.dump(self._titles, f, indent=2)
+
+    def mark_posted(self, story_id: str, title: str = None):
         self._posted.add(story_id)
         self._save_log()
+        if title:
+            self._titles[story_id] = title
+            self._save_titles()
 
     # ---- PRAW (optional) ------------------------------------------------
     @staticmethod

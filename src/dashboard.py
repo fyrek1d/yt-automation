@@ -36,11 +36,12 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote
 
-from flask import Flask, jsonify, request, send_from_directory, abort
+from flask import Flask, jsonify, request, send_from_directory, abort, Response
 
 BASE = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE / "config" / "config.json"
 POSTED_PATH = BASE / "logs" / "posted.json"
+POSTS_META_PATH = BASE / "logs" / "posts_meta.json"
 VIDEO_DIR = BASE / "output" / "videos"
 LOG_DIR = BASE / "logs"
 LOCK_PATH = BASE / "logs" / "run.lock"
@@ -334,6 +335,114 @@ def save_settings():
     return jsonify({"ok": True, "saved": True})
 
 
+@app.get("/api/preview/caption")
+@require_token_decorator
+def preview_caption():
+    """Render a static preview of the current caption style as PNG."""
+    import io
+
+    from editor import VideoEditor
+
+    cfg = _read_json(CONFIG_PATH, {})
+    caption = dict(cfg.get("caption", {}))
+    for key, val in request.args.items():
+        if key in caption or key in CAPTION_FIELDS:
+            if key in ("uppercase",):
+                caption[key] = val.lower() in ("1", "true", "yes", "on")
+            elif key in ("font_size", "stroke", "max_words"):
+                try:
+                    caption[key] = int(val)
+                except ValueError:
+                    pass
+            elif key in ("gap_scale", "y_landscape", "y_portrait"):
+                try:
+                    caption[key] = float(val)
+                except ValueError:
+                    pass
+            else:
+                caption[key] = val
+    res = cfg.get("video", {}).get("resolution", [1080, 1920])
+    W, H = res
+    scale = 480 / H
+    preview = VideoEditor.render_caption_preview(
+        caption, resolution=(int(W * scale), 480)
+    )
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.fromarray(preview).save(buf, format="PNG")
+    buf.seek(0)
+    return Response(buf.read(), mimetype="image/png")
+
+
+@app.get("/api/preview/bleep")
+@require_token_decorator
+def preview_bleep():
+    """Return a WAV sample of a given bleep style."""
+    import io
+
+    import numpy as np
+    import soundfile as sf
+
+    from tts import TTS
+
+    style = request.args.get("style", "dual")
+    if style not in BLEEP_STYLES:
+        abort(404)
+    sr = 22050
+    wave = TTS._make_beep(sr, 0.6, style)
+    buf = io.BytesIO()
+    sf.write(buf, wave, sr, format="WAV")
+    buf.seek(0)
+    return Response(buf.read(), mimetype="audio/wav")
+
+
+_TTS_INSTANCE = None
+
+
+def _get_tts():
+    """Lazily built TTS (kokoro) instance reused across voice previews."""
+    global _TTS_INSTANCE
+    if _TTS_INSTANCE is None:
+        from tts import TTS
+
+        cfg = _read_json(CONFIG_PATH, {})
+        paths = cfg.get("paths", {})
+        _TTS_INSTANCE = TTS(
+            engine="kokoro",
+            kokoro_voice=cfg.get("tts", {}).get("kokoro_voice", "am_adam"),
+            model_path=paths.get("kokoro_model"),
+            voices_path=paths.get("kokoro_voices"),
+            explicit_words=[],
+            speed=cfg.get("tts", {}).get("speed", 1.0),
+        )
+    return _TTS_INSTANCE
+
+
+@app.get("/api/preview/voice")
+@require_token_decorator
+def preview_voice():
+    """Return a short WAV sample of a given kokoro voice."""
+    import tempfile
+
+    voice = request.args.get("voice", "")
+    if voice not in _kokoro_voices():
+        abort(404)
+    tts = _get_tts()
+    tts.kokoro_voice = voice
+    sample = "This is a sample of my narration voice for testing."
+    fd, tmp = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    try:
+        path, _ = tts._kokoro_synthesize(sample, tmp)
+        with open(path, "rb") as f:
+            data = f.read()
+        return Response(data, mimetype="audio/wav")
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
 @app.get("/api/published")
 @require_token_decorator
 def get_published():
@@ -344,7 +453,8 @@ def get_published():
 @require_token_decorator
 def get_posts():
     posts = _read_json(POSTED_PATH, [])
-    return jsonify({"posts": posts})
+    meta = _read_json(POSTS_META_PATH, {})
+    return jsonify({"posts": posts, "titles": meta})
 
 
 @app.delete("/api/posts/<story_id>")
