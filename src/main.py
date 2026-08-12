@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import logging
+import threading
 from pathlib import Path
 
 logging.basicConfig(
@@ -30,6 +31,17 @@ def resolve(base_dir: Path, p: str) -> str:
     if p.is_absolute():
         return str(p)
     return str(base_dir / p)
+
+
+def _cleanup_lock(lock_path: Path):
+    """Remove the run.lock file if this process still owns it."""
+    try:
+        if lock_path.exists():
+            owner = lock_path.read_text().strip()
+            if owner == str(os.getpid()):
+                lock_path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def main():
@@ -79,7 +91,20 @@ def main():
                 f"(logs/run.lock pid {stale_pid}). Wait for it to finish."
             )
     lock_path.write_text(str(os.getpid()))
-    atexit.register(lock_path.unlink, missing_ok=True)
+    atexit.register(_cleanup_lock, lock_path)
+
+    # Watchdog: a healthy run finishes in minutes; anything still alive after
+    # MAX_RUN_SECONDS is hung (e.g. a TTS/network call that never returns) and
+    # would otherwise hold run.lock and block every later cron. Force-exit so
+    # the lock is released and the next scheduled run can proceed.
+    max_run_seconds = int(os.environ.get("PIPELINE_MAX_RUN_SECONDS", 2700))  # 45 min
+    _deadline = threading.Timer(
+        max_run_seconds,
+        lambda: (_cleanup_lock(lock_path), os._exit(3)),
+    )
+    _deadline.daemon = True
+    _deadline.start()
+    log.info("Watchdog armed: will force-exit after %ss", max_run_seconds)
 
     paths = cfg["paths"]
     for key in ("gameplay_dir", "audio_dir", "video_dir", "thumbnail_dir"):

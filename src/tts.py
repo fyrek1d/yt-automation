@@ -74,6 +74,7 @@ class TTS:
         elevenlabs_key_path: str = None,
         explicit_words: list = None,
         bleep_style: str = "dual",
+        kokoro_timeout: float = 120.0,
     ):
         self.lang = lang
         self.slow = slow
@@ -91,6 +92,7 @@ class TTS:
         self._kokoro = None
         self.explicit_words = explicit_words or []
         self.bleep_style = bleep_style or "dual"
+        self.kokoro_timeout = kokoro_timeout
         self._regex = None
         self._whisper_model = None
 
@@ -306,7 +308,12 @@ class TTS:
                 ):
                     chunks.append((part, sr))
 
-            asyncio.run(_run())
+            # kokoro_onnx has a bug where overly long phoneme sequences (>510)
+            # crash an internal background task, after which create_stream can
+            # hang forever. A hard timeout turns that into a catchable error so
+            # the pipeline falls back to the next TTS engine instead of stalling
+            # the whole run and leaving the run.lock held.
+            asyncio.run(asyncio.wait_for(_run(), timeout=self.kokoro_timeout))
             if not chunks:
                 raise RuntimeError("Kokoro produced no audio")
             return np.concatenate([a for a, _ in chunks]), chunks[0][1]
@@ -411,7 +418,9 @@ class TTS:
             ):
                 chunks.append((audio_part, sr))
 
-        asyncio.run(_run())
+        # Same hang guard as the censored path above (see kokoro_onnx >510
+        # phoneme bug). A timeout here falls through to the next engine.
+        asyncio.run(asyncio.wait_for(_run(), timeout=self.kokoro_timeout))
         if not chunks:
             raise RuntimeError("Kokoro produced no audio")
         sr = chunks[0][1]
