@@ -48,9 +48,11 @@ def main():
     )
     video_id = uploader.upload(
         video_path=str(vids[0]),
-        title=meta["title_format"],
+        title=meta["title_format"].format(
+            title=Path(vids[0].name).stem, url="https://www.reddit.com"
+        ),
         description=meta["description_template"].format(
-            url="https://www.reddit.com", title=vids[0].name
+            url="https://www.reddit.com", title=Path(vids[0].name).stem
         ),
         tags=meta["tags"],
         thumbnail_path=str(ths[0]) if ths else None,
