@@ -147,6 +147,60 @@ def _cron_schedule():
     return None
 
 
+def _format_schedule(raw):
+    """Turn a cron schedule like '0 9,15,21 * * *' into readable times.
+
+    Returns e.g. '09:00, 15:00, 21:00' (daily) or the raw string if it
+    can't be parsed.
+    """
+    if not raw:
+        return None
+    parts = raw.split()
+    if len(parts) < 5:
+        return raw
+    minute, hour = parts[0], parts[1]
+
+    def _expand(field):
+        # Handle comma lists and '*'/'*/n'; falls back to the raw token.
+        if field == "*":
+            return None
+        if "/" in field:
+            base, step = field.split("/")
+            try:
+                lo = int(base) if base.isdigit() else 0
+                hi = 23 if field is hour else 59
+                return list(range(lo, hi + 1, int(step)))
+            except ValueError:
+                return None
+        out = []
+        for tok in field.split(","):
+            if tok.isdigit():
+                out.append(int(tok))
+        return out or None
+
+    mins = _expand(minute)
+    hrs = _expand(hour)
+    # dom / mon / dow all '*' means daily
+    daily = parts[2] == "*" and parts[3] == "*" and parts[4] == "*"
+    if hrs is None:
+        return raw
+    times = []
+    if mins is None:
+        m = 0
+    elif len(mins) == 1:
+        m = mins[0]
+    else:
+        m = None  # irregular minute lists: fall back to raw
+    if m is None:
+        return raw
+    for h in hrs:
+        times.append(f"{h:02d}:{m:02d}")
+    if not times:
+        return raw
+    label = "daily" if daily else "scheduled"
+    return ", ".join(times) + f" ({label})"
+
+
 # ---- auth ----------------------------------------------------------------
 
 TOKEN = None
@@ -214,6 +268,7 @@ def status():
         "run_log": run_log,
         "lock_pid": lock_pid,
         "schedule": _cron_schedule(),
+        "schedule_human": _format_schedule(_cron_schedule()),
     })
 
 

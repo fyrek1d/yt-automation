@@ -5,7 +5,7 @@ A fully automated pipeline that creates faceless short-form videos: fetches Redd
 ## Quick Start
 
 ```bash
-git clone https://github.com/fyrek1d/yt-automation.git
+git clone https://github.com/<your-username>/yt-automation.git
 cd yt-automation
 ./setup.sh                # venv + deps + Kokoro TTS models (~350 MB) + profanity list + config
 ./setup.sh --sample-clip  # optional: also generate a placeholder gameplay clip

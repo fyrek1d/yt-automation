@@ -115,7 +115,7 @@
         <div class="stat"><div class="label">Status</div><div class="value"><span id="s-status">–</span></div></div>
         <div class="stat"><div class="label">Mode</div><div class="value" id="s-mode">–</div></div>
         <div class="stat"><div class="label">Started</div><div class="value" id="s-started">–</div></div>
-        <div class="stat"><div class="label">Schedule (cron)</div><div class="value" id="s-schedule">–</div></div>
+        <div class="stat"><div class="label">Schedule</div><div class="value" id="s-schedule">–</div></div>
         <div class="stat"><div class="label">Lock pid</div><div class="value" id="s-lock">–</div></div>
       </div>
     </div>
@@ -316,7 +316,7 @@ async function pollStatus() {
   document.getElementById("s-status").textContent = run ? "Running" : "Idle";
   document.getElementById("s-mode").textContent = run ? state.mode : "–";
   document.getElementById("s-started").textContent = state.started ? state.started.replace("T", " ").slice(0, 19) : "–";
-  document.getElementById("s-schedule").textContent = state.schedule ? state.schedule : "–";
+  document.getElementById("s-schedule").textContent = state.schedule_human ? state.schedule_human : (state.schedule ? state.schedule : "–");
   document.getElementById("s-lock").textContent = state.lock_pid ? state.lock_pid : "–";
   document.getElementById("btn-run").disabled = run;
   document.getElementById("btn-dry").disabled = run;

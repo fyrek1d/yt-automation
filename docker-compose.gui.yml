@@ -12,7 +12,7 @@ services:
       - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface
       # Mount the crontab of the user that owns the cron job so the dashboard
       # can show the real schedule. Run `USER=<cron-user> docker compose ...`
-      # (e.g. USER=fyrek) so ${USER} resolves to the right account.
+      # so ${USER} resolves to the right account.
       - /var/spool/cron/crontabs/${USER:-root}:/app/host-crontab:ro
     networks:
       - web
