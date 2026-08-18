@@ -5,6 +5,7 @@ import os
 import sys
 import logging
 import threading
+import time
 from pathlib import Path
 
 logging.basicConfig(
@@ -13,6 +14,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("pipeline")
 
+from cleanup import cleanup_old_outputs
 from scraper import StoryScraper
 from tts import TTS
 from editor import VideoEditor
@@ -86,10 +88,14 @@ def main():
                 log.warning("Removing stale run.lock from dead process %s", stale_pid)
                 lock_path.unlink(missing_ok=True)
         if lock_path.exists():
-            raise RuntimeError(
-                "Another pipeline run is already in progress "
-                f"(logs/run.lock pid {stale_pid}). Wait for it to finish."
-            )
+            if stale_pid:
+                raise RuntimeError(
+                    "Another pipeline run is already in progress "
+                    f"(logs/run.lock pid {stale_pid}). Wait for it to finish."
+                )
+            else:
+                log.warning("Removing empty run.lock file")
+                lock_path.unlink(missing_ok=True)
     lock_path.write_text(str(os.getpid()))
     atexit.register(_cleanup_lock, lock_path)
 
@@ -123,6 +129,9 @@ def main():
             paths[key] = resolve(base_dir, paths[key])
     if paths.get("reddit_ini"):
         paths["reddit_ini"] = resolve(base_dir, paths["reddit_ini"])
+
+    # Auto-cleanup old rendered artifacts so videos only live on YouTube
+    cleanup_old_outputs(cfg, paths)
 
     # Load explicit-word list up front so both TTS censoring and title
     # prioritisation in the scraper use the same words.

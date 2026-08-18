@@ -38,6 +38,8 @@ from urllib.parse import unquote
 
 from flask import Flask, jsonify, request, send_from_directory, abort, Response
 
+from cleanup import cleanup_old_outputs
+
 BASE = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE / "config" / "config.json"
 POSTED_PATH = BASE / "logs" / "posted.json"
@@ -103,7 +105,11 @@ def _cleanup_stale_lock():
     if not LOCK_PATH.exists():
         return
     pid = LOCK_PATH.read_text().strip()
-    if pid.isdigit() and not _pid_alive(int(pid)):
+    if pid.isdigit():
+        if not _pid_alive(int(pid)):
+            LOCK_PATH.unlink(missing_ok=True)
+    else:
+        # empty or non-digit pid -> treat as stale
         LOCK_PATH.unlink(missing_ok=True)
 
 
@@ -314,6 +320,7 @@ def get_options():
     cfg = _read_json(CONFIG_PATH, {})
     tts = cfg.get("tts", {})
     caption = cfg.get("caption", {})
+    cleanup = cfg.get("cleanup", {})
     return jsonify({
         "bleep_styles": BLEEP_STYLES,
         "caption_fields": CAPTION_FIELDS,
@@ -322,6 +329,7 @@ def get_options():
             "bleep_style": tts.get("bleep_style", "dual"),
             "kokoro_voice": tts.get("kokoro_voice", ""),
             "caption": caption,
+            "cleanup": cleanup,
         },
     })
 
@@ -341,8 +349,39 @@ def save_settings():
         allowed_caption = set(CAPTION_FIELDS)
         new_caption = {k: v for k, v in body["caption"].items() if k in allowed_caption}
         cfg.setdefault("caption", {}).update(new_caption)
+    if isinstance(body.get("cleanup"), dict):
+        allowed_cleanup = {"enabled", "retention_days"}
+        new_cleanup = {k: v for k, v in body["cleanup"].items() if k in allowed_cleanup}
+        if "retention_days" in new_cleanup:
+            try:
+                new_cleanup["retention_days"] = float(new_cleanup["retention_days"])
+            except (TypeError, ValueError):
+                pass
+        cfg.setdefault("cleanup", {}).update(new_cleanup)
     _write_json(CONFIG_PATH, cfg)
     return jsonify({"ok": True, "saved": True})
+
+
+@app.post("/api/cleanup")
+@require_token_decorator
+def run_cleanup():
+    """Manually trigger cleanup of old rendered artifacts."""
+    try:
+        cfg = _read_json(CONFIG_PATH, {})
+        paths = cfg.get("paths", {})
+        # resolve relative paths
+        resolved = {}
+        for k, v in paths.items():
+            if isinstance(v, str):
+                p = Path(v)
+                if not p.is_absolute():
+                    p = BASE / p
+                resolved[k] = str(p)
+        deleted = cleanup_old_outputs(cfg, resolved)
+        return jsonify({"ok": True, "deleted": deleted})
+    except Exception as e:
+        log.exception("Cleanup failed")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.get("/api/preview/caption")

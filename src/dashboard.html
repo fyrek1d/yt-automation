@@ -172,6 +172,18 @@
       <audio id="voice-audio" controls style="margin-top:8px; display:none"></audio>
     </div>
     <div class="card">
+      <b>Output cleanup</b>
+      <p class="muted">Automatically delete rendered videos/audio/thumbnails older than the retention window so finished Shorts only live on YouTube. Runs at the start of every pipeline run.</p>
+      <div class="form-row">
+        <label><input type="checkbox" id="cleanup-enabled"> Auto-cleanup</label>
+        <label>Older than <input type="number" id="cleanup-days" min="1" max="365" step="1" style="width:80px"> days</label>
+      </div>
+      <div class="form-row" style="margin-top:8px">
+        <button class="primary" onclick="runCleanup()">Delete old files now</button>
+      </div>
+      <div id="cleanup-msg" class="msg"></div>
+    </div>
+    <div class="card">
       <button class="primary" onclick="saveSettings()">Save settings</button>
       <button onclick="loadSettings()" style="margin-left:10px">Reload</button>
       <div id="settings-msg" class="msg"></div>
@@ -377,6 +389,7 @@ async function loadSettings() {
     renderBleepOptions();
     renderVoiceOptions();
     renderCaptionForm();
+    renderCleanupOptions();
     refreshCaptionPreview();
   } catch (e) {}
 }
@@ -400,6 +413,11 @@ function renderVoiceOptions() {
     if (v === options.current.kokoro_voice) opt.selected = true;
     sel.appendChild(opt);
   }
+}
+function renderCleanupOptions() {
+  const cur = options.current.cleanup || {};
+  document.getElementById("cleanup-enabled").checked = cur.enabled !== false;
+  document.getElementById("cleanup-days").value = cur.retention_days || 7;
 }
 function renderCaptionForm() {
   const box = document.getElementById("settings-caption");
@@ -442,11 +460,21 @@ async function saveSettings() {
     caption,
     bleep_style: document.getElementById("settings-bleep").value,
     kokoro_voice: document.getElementById("settings-voice").value,
+    cleanup: {
+      enabled: document.getElementById("cleanup-enabled").checked,
+      retention_days: parseInt(document.getElementById("cleanup-days").value, 10) || 7,
+    },
   };
   try {
     await api("/api/settings", { method: "POST", body: JSON.stringify(body) });
     setMsg("settings-msg", "Settings saved. They apply on the next run.", false);
   } catch (e) { setMsg("settings-msg", e.message, true); }
+}
+async function runCleanup() {
+  try {
+    const res = await api("/api/cleanup", { method: "POST" });
+    setMsg("cleanup-msg", `Cleanup done: ${res.deleted} file(s) removed.`, false);
+  } catch (e) { setMsg("cleanup-msg", e.message, true); }
 }
 
 // --- previews ---

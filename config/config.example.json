@@ -107,5 +107,9 @@
       "storytime",
       "shorts"
     ]
+  },
+  "cleanup": {
+    "enabled": true,
+    "retention_days": 7
   }
 }
